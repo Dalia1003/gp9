@@ -1,8 +1,8 @@
-import os
-from firebase_admin import credentials, initialize_app, firestore
+import firebase_admin
+from firebase_admin import credentials, firestore
 
-cred_path = "/etc/secrets/serviceAccountKey.json"
+cred_path = "/etc/secrets/serviceAccountKey.json"  # Render secret path
 cred = credentials.Certificate(cred_path)
-initialize_app(cred)
+firebase_admin.initialize_app(cred)
 
 db = firestore.client()
