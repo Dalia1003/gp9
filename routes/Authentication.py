@@ -6,6 +6,7 @@ import firebase_admin
 from flask_mail import Message
 from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
 import re
+import os
 
 # ----------------------------
 # Blueprint
@@ -13,11 +14,14 @@ import re
 auth_bp = Blueprint("Authentication", __name__)
 
 # ----------------------------
-# Firebase Setup
+# Firebase Setup (Render-compatible)
 # ----------------------------
 if not firebase_admin._apps:
-    cred = credentials.Certificate(r"C:\MAMP\htdocs\ouwn_website\serviceAccountKey.json")
+    # Render secretFiles path
+    cred_path = "/etc/secrets/serviceAccountKey.json"
+    cred = credentials.Certificate(cred_path)
     initialize_app(cred)
+
 db = firestore.client()
 
 # ----------------------------
@@ -42,14 +46,13 @@ def login():
             return render_template("login.html", entered_username=entered_username)
 
         try:
-            # Firestore path: HealthCareP collection
             users = db.collection("HealthCareP").where("UserID", "==", username).limit(1).get()
             if not users:
                 flash("Username or password is invalid.", "error")
                 return render_template("login.html", entered_username=entered_username)
 
-            user_doc = users[0]            
-            user = user_doc.to_dict() 
+            user_doc = users[0]
+            user = user_doc.to_dict()
 
             if not user.get("email_confirmed", 0):
                 flash("⚠️ Please confirm your email before logging in.", "error")
@@ -59,7 +62,6 @@ def login():
                 flash("Username or password is invalid.", "error")
                 return render_template("login.html", entered_username=entered_username)
 
-            # Successful login
             session["user_id"] = user_doc.id
             session["user_name"] = user.get("Name") or user.get("UserID")
             session["user_email"] = user.get("Email", "")
@@ -87,7 +89,6 @@ def signup():
         password = request.form.get("password", "")
         entered = {"first_name": first, "last_name": last, "username": username, "email": email}
 
-        # Validation
         if not all([first, last, username, email, password]):
             flash("All fields are required.", "error")
             return render_template("signup.html", entered=entered)
@@ -97,14 +98,12 @@ def signup():
             flash("Password must include uppercase, lowercase, number, and special character.", "error")
             return render_template("signup.html", entered=entered)
 
-        # Check duplicates in HealthCareP
         user_doc = db.collection("HealthCareP").document(username).get()
         email_docs = db.collection("HealthCareP").where("Email", "==", email).get()
         if user_doc.exists or len(email_docs) > 0:
             flash("Username or email already exists.", "error")
             return render_template("signup.html", entered=entered)
 
-        # Save user (hashed password, email_confirmed=0)
         hashed_pw = generate_password_hash(password)
         db.collection("HealthCareP").document(username).set({
             "UserID": username,
@@ -114,8 +113,6 @@ def signup():
             "email_confirmed": 0
         })
 
-        # Email confirmation
-        # Email confirmation
         s = get_serializer()
         token = s.dumps({"username": username, "email": email}, salt="email-confirm")
         confirmLink = url_for("Authentication.confirm_email", token=token, _external=True)
@@ -143,13 +140,13 @@ def signup():
                 subject="Confirm Your Email",
                 sender=current_app.config["MAIL_USERNAME"],
                 recipients=[email],
-                html=html_body   # <-- use html instead of body
+                html=html_body
             )
             mail.send(msg)
             flash("✅ Account created! Please check your email to confirm your account.", "success")
         except Exception as e:
             print("❌ Email sending failed:", e)
-            flash("Account created, but failed to send confirmation email. Please contact support.", "error")
+            flash("Account created, but failed to send confirmation email.", "error")
 
         return redirect(url_for("Authentication.login"))
 
