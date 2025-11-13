@@ -1,7 +1,8 @@
 import os
 import json
-from firebase_admin import credentials, initialize_app, firestore
 import tempfile
+import firebase_admin
+from firebase_admin import credentials, firestore
 
 # ----------------------------
 # Firebase Initialization
@@ -20,3 +21,4 @@ if not firebase_admin._apps:
     initialize_app(cred)
 
 db = firestore.client()
+
