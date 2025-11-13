@@ -1,34 +1,34 @@
-from flask import Flask, render_template, jsonify, request, session, redirect, url_for, flash
-from flask_mail import Mail
-from firebase.Initialization import db
-from firebase_admin import firestore
+from flask import Flask, render_template, jsonify, request, session, redirect, url_for, flash, current_app
+from flask_mail import Mail, Message
+from firebase.Initialization import db  # Firestore client
 from datetime import datetime, date
-import json, os, re
+import os, json, re, random
 from werkzeug.security import generate_password_hash
-import random
 
 mail = Mail()
 
 def create_app():
     app = Flask(__name__)
-    app.secret_key = "some_random_secret"  # Change in production
+    
+    # ----------------------------
+    # Secret Key
+    # ----------------------------
+    app.secret_key = os.environ.get("SECRET_KEY", "dev_secret")  # fallback for local dev
 
     # ----------------------------
     # Email Configuration
     # ----------------------------
     app.config.update(
-    MAIL_SERVER='smtp.gmail.com',
-    MAIL_PORT=587,
-    MAIL_USE_TLS=True,
-    MAIL_USE_SSL=False,
-    MAIL_USERNAME=os.environ.get("MAIL_USERNAME"),
-    MAIL_PASSWORD=os.environ.get("MAIL_PASSWORD"),
-    MAIL_DEFAULT_SENDER=os.environ.get("MAIL_USERNAME")
-)
+        MAIL_SERVER='smtp.gmail.com',
+        MAIL_PORT=587,
+        MAIL_USE_TLS=True,
+        MAIL_USE_SSL=False,
+        MAIL_USERNAME=os.environ.get("MAIL_USERNAME"),
+        MAIL_PASSWORD=os.environ.get("EMAIL_PASSWORD"),
+        MAIL_DEFAULT_SENDER=os.environ.get("MAIL_USERNAME")
+    )
     mail.init_app(app)
-
     app.extensions["mail"] = mail
-    
 
     # ----------------------------
     # Blueprints
@@ -101,7 +101,7 @@ def create_app():
             address = request.form.get("address", "").strip()
             blood = request.form.get("blood_type", "").strip()
 
-            # Basic validation
+            # Validation
             if not all([pid, name, dob, gender, phone, email, address, blood]):
                 errors.append("All fields are required.")
 
@@ -115,8 +115,7 @@ def create_app():
             if dob:
                 try:
                     dob_date = datetime.strptime(dob, "%Y-%m-%d").date()
-                    today = date.today()
-                    if dob_date > today:
+                    if dob_date > date.today():
                         errors.append("Date of Birth cannot be in the future.")
                 except ValueError:
                     errors.append("Invalid date format.")
@@ -128,7 +127,7 @@ def create_app():
                     errors.append("Patient already exists with this ID.")
 
             if not errors:
-                doc_ref.set({
+                db.collection("Patients").document(pid).set({
                     "FullName": name,
                     "DOB": dob,
                     "Gender": gender,
@@ -150,10 +149,8 @@ def create_app():
         if 'user_id' not in session:
             return redirect(url_for('Authentication.login'))
 
-        # GET → render template
         if request.method == "GET":
             prefilled_pid = request.args.get("pid", "")
-            # Always send a list for preselected codes to avoid Undefined in JS
             return render_template(
                 "MedicalNotes.html",
                 prefilled_pid=prefilled_pid,
@@ -161,64 +158,52 @@ def create_app():
                 selected_icd_codes=[]
             )
 
-        # POST → save note + ICD
-        # POST → save note + ICD
         try:
-            data = request.get_json()
+            data = request.get_json() or request.form
             pid = data.get("pid")
             note_text = data.get("note_text")
             icd_codes = data.get("icd_codes", [])
 
             if not pid or not note_text or not icd_codes:
-                return jsonify({
-                    "status": "error",
-                    "message": "Missing patient ID, note text, or ICD codes"
-                }), 400
+                return jsonify({"status": "error", "message": "Missing patient ID, note text, or ICD codes"}), 400
 
             patient_ref = db.collection("Patients").document(pid)
-
-            # Random Note ID
-            note_id = f"note{random.randint(1, 1_000_000)}"
+            note_ref = patient_ref.collection("MedicalNotes").document()  # Auto ID
             note_data = {
-                "NoteID": note_id,
+                "NoteID": note_ref.id,
                 "Note": note_text,
                 "CreatedDate": datetime.now()
             }
-            note_ref = patient_ref.collection("MedicalNotes").document(note_id)
             note_ref.set(note_data)
 
             # Save each ICD code
             for code in icd_codes:
-                icd_id = f"icd{random.randint(1, 1_000_000)}"
+                icd_ref = note_ref.collection("ICDCode").document()  # Auto ID
                 icd_data = {
-                    "ICD_ID": icd_id,
+                    "ICD_ID": icd_ref.id,
                     "Adjusted": [{"Code": code.get("Code"), "Description": code.get("Description")}],
                     "Predicted": [],
                     "AdjustedBy": session.get("user_id"),
                     "AdjustedAt": datetime.now()
                 }
-                note_ref.collection("ICDCode").document(icd_id).set(icd_data)
+                icd_ref.set(icd_data)
 
             return jsonify({"status": "success", "redirect": url_for("dashboard")})
 
         except Exception as e:
             return jsonify({"status": "error", "message": str(e)}), 500
 
+    # ----------------------------
+    # Check Patient ID
+    # ----------------------------
     @app.route("/check_id")
     def check_id():
-        from firebase_admin import firestore
-        db = firestore.client()
-
         v = request.args.get("v", "").strip()
         exists = False
-
         if v:
-            # Check Firestore Patients collection
             doc_ref = db.collection("Patients").document(v)
             exists = doc_ref.get().exists
-
         return jsonify({"exists": exists})
-
 
     # ----------------------------
     # ICD Routes
@@ -318,8 +303,7 @@ def create_app():
 
     return app
 
+
 if __name__ == "__main__":
     app = create_app()
     app.run(debug=True)
-
-
