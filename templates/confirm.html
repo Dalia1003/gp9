@@ -1,0 +1,12 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Email Confirmation</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="banner {{ 'ok' if '✅' in msg else 'err' }}">{{ msg }}</div>
+  <a href="{{ url_for('Authentication.login') }}" class="btn">Go to Login</a>
+</body>
+</html>

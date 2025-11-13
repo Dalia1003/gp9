@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Patient Dashboard - Medical Coding Portal</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://kit.fontawesome.com/a2d9d6c9c4.js" crossorigin="anonymous"></script>
+</head>
+<body>
+    {% include "header.html" %}
+
+    <!-- Breadcrumb -->
+    <nav class="ouwn-breadcrumb-bar" role="navigation" aria-label="Breadcrumb">
+        <div class="ouwn-crumbs">
+            <a class="crumb" href="{{ url_for('dashboard') }}">
+                <i class="fa-solid fa-house"></i>
+                <span>Dashboard</span>
+            </a>
+        </div>
+    </nav>
+
+    <!-- Toast Message -->
+    {% if msg_text %}
+    <div id="toast" class="toast show">
+        <i class="fa-solid fa-circle-check"></i>
+        <span>{{ msg_text }}</span>
+    </div>
+    <script>
+        setTimeout(() => {
+            const toast = document.getElementById('toast');
+            if (toast) toast.classList.remove('show');
+        }, 3500);
+        window.history.replaceState({}, document.title, window.location.pathname);
+    </script>
+    {% endif %}
+
+    <!-- Main content -->
+    <main class="main-content">
+        <div class="container">
+            <div class="title-bar">
+                <div class="title-bar-line"></div>
+                <h2 class="section-title">Patient List</h2>
+                <div class="title-bar-line-fade"></div>
+            </div>
+
+            <div class="header-buttons">
+                <button class="btn-primary" onclick="location.href='{{ url_for('add_patient') }}'">
+                    <i class="fa-solid fa-user-plus"></i> Add Patient
+                </button>
+            </div>
+
+            {% if patients %}
+            <div class="patient-grid">
+                {% for p in patients %}
+                <div class="patient-card">
+                    <div class="card-corner"></div>
+                    <div class="card-content">
+                        <h3 class="patient-name">{{ p.FullName }}</h3>
+                        <div class="patient-id-row">
+                            <span class="id-label">Patient ID</span>
+                            <span class="patient-id">{{ p.ID }}</span>
+                        </div>
+                        <button class="btn-secondary" 
+                            onclick="location.href='{{ url_for('add_note') }}?pid={{ p.ID }}'">
+                            <i class="fa-solid fa-file-medical"></i> Add Medical Notes
+                        </button>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p>No patients found.</p>
+            {% endif %}
+        </div>
+        
+    </main>
+
+    <footer>
+        <p>&copy; 2025 OuwN. All Rights Reserved.</p>
+    </footer>
+</body>
+</html>
