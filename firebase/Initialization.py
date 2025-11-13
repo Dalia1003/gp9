@@ -1,12 +1,13 @@
+# firebase/Initialization.py
 import os
-import json
 from firebase_admin import credentials, initialize_app, firestore
 
-# Read the secret file from /etc/secrets/
+# Path to the secret file in Render
 cred_path = "/etc/secrets/serviceAccountKey.json"
-cred_json = json.load(open(cred_path))
 
-cred = credentials.Certificate(cred_json)
+# Initialize Firebase
+cred = credentials.Certificate(cred_path)
 initialize_app(cred)
 
+# Firestore client
 db = firestore.client()
