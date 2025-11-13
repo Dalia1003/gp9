@@ -4,7 +4,7 @@ services:
     env: python
     branch: main
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn ouwn_website.app:app
+    startCommand: gunicorn app:app
     envVars:
       - key: FIREBASE_KEY
         fromSecret: FIREBASE_KEY
