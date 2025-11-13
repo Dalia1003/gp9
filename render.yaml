@@ -6,7 +6,8 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn "app:create_app()"
     envVars:
-      - key: FIREBASE_KEY
-        fromSecret: FIREBASE_KEY
       - key: EMAIL_PASSWORD
         fromSecret: EMAIL_PASSWORD
+    secretFiles:
+      - key: serviceAccountKey.json
+        path: /etc/secrets/serviceAccountKey.json
