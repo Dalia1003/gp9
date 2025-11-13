@@ -3,7 +3,7 @@ services:
     name: ouwn
     env: python
     branch: main
-    buildCommand: pip install -r ouwn_website/requirements.txt
+    buildCommand: pip install --user -r requirements.txt
     startCommand: gunicorn ouwn_website.app:app
     envVars:
       - key: FIREBASE_KEY
