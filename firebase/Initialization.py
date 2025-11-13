@@ -1,12 +1,8 @@
-import firebase_admin
-from firebase_admin import credentials, firestore
+import os
+from firebase_admin import credentials, initialize_app
 
-# Path to your key file
-cred = credentials.Certificate(r"C:\MAMP\htdocs\ouwn_website\serviceAccountKey.json")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+cred_path = os.path.join(BASE_DIR, "serviceAccountKey.json")
 
-# Initialize only once
-if not firebase_admin._apps:
-    firebase_admin.initialize_app(cred)
-
-# Get Firestore client
-db = firestore.client()
+cred = credentials.Certificate(cred_path)
+initialize_app(cred)
