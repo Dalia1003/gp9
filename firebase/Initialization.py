@@ -3,6 +3,10 @@ from firebase_admin import credentials, firestore
 import os
 import json
 
+print("DEBUG: Starting Firebase Initialization...")
+print("DEBUG: FIREBASE_JSON present?", "FIREBASE_JSON" in os.environ)
+print("DEBUG: FIREBASE_JSON length:", len(os.environ.get("FIREBASE_JSON", "")))
+
 # Load Firebase JSON from environment variable
 firebase_json = os.environ.get("FIREBASE_JSON")
 
@@ -23,3 +27,4 @@ if not firebase_admin._apps:
     firebase_admin.initialize_app(cred)
 
 db = firestore.client()
+
