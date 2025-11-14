@@ -323,10 +323,13 @@ def create_app():
 
     def send_async_email(app, msg):
         with app.app_context():
+            print("📨 Attempting to send email...")
             try:
                 mail.send(msg)
+                print("✅ Email sent successfully!")
             except Exception as e:
-                print("❌ Async email failed:", e)
+                print("❌ Email sending failed:", e)
+
 
 
     return app
@@ -337,6 +340,7 @@ def create_app():
 if __name__ == "__main__":
     app = create_app()
     app.run(debug=True)
+
 
 
 
