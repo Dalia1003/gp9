@@ -1,24 +1,25 @@
-import os
-import json
-import tempfile
 import firebase_admin
 from firebase_admin import credentials, firestore
+import os
+import json
 
-# ----------------------------
-# Firebase Initialization
-# ----------------------------
+# Load Firebase JSON from environment variable
+firebase_json = os.environ.get("FIREBASE_JSON")
+
+if not firebase_json:
+    print("⚠️ FIREBASE_JSON not found in environment variables!")
+    raise Exception("FIREBASE_JSON env variable not found!")
+
+try:
+    # Convert JSON string to Python dict
+    firebase_dict = json.loads(firebase_json)
+except json.JSONDecodeError:
+    print("⚠️ FIREBASE_JSON is not valid JSON. Check Render variable formatting.")
+    raise
+
+# Initialize Firebase once
 if not firebase_admin._apps:
-    firebase_json = os.environ.get("FIREBASE_JSON")
-    if not firebase_json:
-        raise Exception("FIREBASE_JSON env variable not found!")
-
-    # Write JSON content to a temp file
-    with tempfile.NamedTemporaryFile(mode='w+', delete=False, suffix='.json') as tmp:
-        tmp.write(firebase_json)
-        tmp_path = tmp.name
-
-    cred = credentials.Certificate(tmp_path)
-    initialize_app(cred)
+    cred = credentials.Certificate(firebase_dict)
+    firebase_admin.initialize_app(cred)
 
 db = firestore.client()
-
