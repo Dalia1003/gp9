@@ -18,15 +18,12 @@ def create_app():
     # ----------------------------
     # Email Configuration
     # ----------------------------
-    app.config.update(
-        MAIL_SERVER='smtp.gmail.com',
-        MAIL_PORT=587,
-        MAIL_USE_TLS=True,
-        MAIL_USE_SSL=False,
-        MAIL_USERNAME=os.environ.get("MAIL_USERNAME"),
-        MAIL_PASSWORD=os.environ.get("EMAIL_PASSWORD"),
-        MAIL_DEFAULT_SENDER=os.environ.get("MAIL_USERNAME")
-    )
+    app.config["MAIL_SERVER"] = os.environ.get("MAIL_SERVER")
+app.config["MAIL_PORT"] = int(os.environ.get("MAIL_PORT", 587))
+app.config["MAIL_USE_TLS"] = os.environ.get("MAIL_USE_TLS", "true").lower() == "true"
+app.config["MAIL_USERNAME"] = os.environ.get("MAIL_USERNAME")
+app.config["MAIL_PASSWORD"] = os.environ.get("MAIL_PASSWORD")
+
     mail.init_app(app)
     app.extensions["mail"] = mail
 
@@ -307,3 +304,4 @@ def create_app():
 if __name__ == "__main__":
     app = create_app()
     app.run(debug=True)
+
