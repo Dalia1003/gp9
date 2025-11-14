@@ -6,6 +6,7 @@ from flask_mail import Message
 from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
 import os
 import re
+import threading
 
 # ----------------------------
 # Blueprint
@@ -26,6 +27,16 @@ db = firestore.client()
 # ----------------------------
 def get_serializer():
     return URLSafeTimedSerializer(current_app.config["SECRET_KEY"])
+
+# ----------------------------
+# Async Email Sending
+# ----------------------------
+def send_async_email(app, msg):
+    with app.app_context():
+        try:
+            current_app.extensions["mail"].send(msg)
+        except Exception as e:
+            print("❌ Async email sending failed:", e)
 
 # ----------------------------
 # LOGIN ROUTE
@@ -136,6 +147,7 @@ def signup():
         </html>
         """
 
+        # Send email asynchronously
         try:
             msg = Message(
                 subject="Confirm Your Email",
@@ -143,10 +155,10 @@ def signup():
                 recipients=[email],
                 html=html_body
             )
-            current_app.extensions["mail"].send(msg)
+            threading.Thread(target=send_async_email, args=(current_app._get_current_object(), msg)).start()
             flash("✅ Account created! Please check your email to confirm your account.", "success")
         except Exception as e:
-            print("❌ Email sending failed:", e)
+            print("❌ Email setup failed:", e)
             flash("Account created, but failed to send confirmation email. Contact support.", "error")
 
         return redirect(url_for("Authentication.login"))
@@ -206,5 +218,3 @@ def check_field():
         result = {"ok": False}
 
     return jsonify(result)
-
-
