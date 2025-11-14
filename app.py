@@ -4,6 +4,7 @@ from firebase.Initialization import db  # Firestore client
 from datetime import datetime, date
 import os, json, re
 from werkzeug.security import generate_password_hash
+import threading
 
 # Initialize Mail globally
 mail = Mail()
@@ -42,6 +43,9 @@ def create_app():
 
     # Initialize Flask-Mail
     mail.init_app(app)
+    app.extensions['mail'] = mail
+    
+
 
 
     # ----------------------------
@@ -315,6 +319,14 @@ def create_app():
         session.clear()
         return redirect(url_for("home"))
 
+    def send_async_email(app, msg):
+        with app.app_context():
+            try:
+                mail.send(msg)
+            except Exception as e:
+                print("❌ Async email failed:", e)
+
+
     return app
 
 # ----------------------------
@@ -323,6 +335,7 @@ def create_app():
 if __name__ == "__main__":
     app = create_app()
     app.run(debug=True)
+
 
 
 
