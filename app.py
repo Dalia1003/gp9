@@ -21,8 +21,11 @@ def create_app():
     # ----------------------------
     app.config["MAIL_SERVER"] = os.environ.get("MAIL_SERVER", "smtp.gmail.com")
     try:
-        app.config["MAIL_PORT"] = int(os.environ.get("MAIL_PORT", 587))
+        app.config["MAIL_PORT"] = int(os.environ.get("MAIL_PORT") or 587)
+    except KeyError:
+        app.config["MAIL_PORT"] = 587
     except ValueError:
+    # Not a valid integer, fallback to default
         app.config["MAIL_PORT"] = 587
     app.config["MAIL_USE_TLS"] = os.environ.get("MAIL_USE_TLS", "true").lower() == "true"
     app.config["MAIL_USE_SSL"] = os.environ.get("MAIL_USE_SSL", "false").lower() == "true"
@@ -312,3 +315,4 @@ def create_app():
 if __name__ == "__main__":
     app = create_app()
     app.run(debug=True)
+
