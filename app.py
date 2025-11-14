@@ -14,21 +14,30 @@ def create_app():
     # ----------------------------
     # Secret Key
     # ----------------------------
+    # ----------------------------
+# Email Configuration
+# ----------------------------
     MAIL_SERVER = os.environ.get("MAIL_SERVER", "smtp.gmail.com")
-    MAIL_PORT = os.environ.get("MAIL_PORT", "587")
+    MAIL_PORT = os.environ.get("MAIL_PORT", 587)
+    try:
+        MAIL_PORT = int(MAIL_PORT)
+    except (ValueError, TypeError):
+        MAIL_PORT = 587  # default fallback
+    
     MAIL_USE_TLS = os.environ.get("MAIL_USE_TLS", "true").lower() == "true"
     MAIL_USE_SSL = os.environ.get("MAIL_USE_SSL", "false").lower() == "true"
     MAIL_USERNAME = os.environ.get("MAIL_USERNAME", "")
     MAIL_PASSWORD = os.environ.get("MAIL_PASSWORD", "")
-
+    
     app.config.update(
         MAIL_SERVER=MAIL_SERVER,
-        MAIL_PORT=int(MAIL_PORT),
+        MAIL_PORT=MAIL_PORT,
         MAIL_USE_TLS=MAIL_USE_TLS,
         MAIL_USE_SSL=MAIL_USE_SSL,
         MAIL_USERNAME=MAIL_USERNAME,
         MAIL_PASSWORD=MAIL_PASSWORD
     )
+
 
     # Initialize Flask-Mail
     mail.init_app(app)
@@ -313,6 +322,7 @@ def create_app():
 if __name__ == "__main__":
     app = create_app()
     app.run(debug=True)
+
 
 
 
