@@ -1,15 +1,16 @@
-from flask import Flask, render_template, jsonify, request, session, redirect, url_for, flash, current_app
+from flask import Flask, render_template, jsonify, request, session, redirect, url_for, flash
 from flask_mail import Mail, Message
 from firebase.Initialization import db  # Firestore client
 from datetime import datetime, date
-import os, json, re, random
+import os, json, re
 from werkzeug.security import generate_password_hash
 
+# Initialize Mail globally
 mail = Mail()
 
 def create_app():
     app = Flask(__name__)
-    
+
     # ----------------------------
     # Secret Key
     # ----------------------------
@@ -19,18 +20,21 @@ def create_app():
     # Email Configuration
     # ----------------------------
     app.config["MAIL_SERVER"] = os.environ.get("MAIL_SERVER", "smtp.gmail.com")
-    app.config["MAIL_PORT"] = int(os.environ.get("MAIL_PORT") or 587)
-        try:
-            app.config["MAIL_PORT"] = int(os.environ["MAIL_PORT"])
-        except KeyError:
-            raise RuntimeError("MAIL_PORT environment variable not set on Render")
-        except ValueError:
-            raise RuntimeError("MAIL_PORT must be a number")
-    app.config["MAIL_USE_TLS"] = (os.environ.get("MAIL_USE_TLS") or "true").lower() == "true"
-    app.config["MAIL_USE_SSL"] = (os.environ.get("MAIL_USE_SSL") or "false").lower() == "true"
-    app.config["MAIL_USERNAME"] = os.environ.get("MAIL_USERNAME") or ""
-    app.config["MAIL_PASSWORD"] = os.environ.get("MAIL_PASSWORD") or ""
 
+    # MAIL_PORT with error handling
+    try:
+        app.config["MAIL_PORT"] = int(os.environ["MAIL_PORT"])
+    except KeyError:
+        raise RuntimeError("MAIL_PORT environment variable not set on Render")
+    except ValueError:
+        raise RuntimeError("MAIL_PORT must be a number")
+
+    app.config["MAIL_USE_TLS"] = (os.environ.get("MAIL_USE_TLS", "true").lower() == "true")
+    app.config["MAIL_USE_SSL"] = (os.environ.get("MAIL_USE_SSL", "false").lower() == "true")
+    app.config["MAIL_USERNAME"] = os.environ.get("MAIL_USERNAME", "")
+    app.config["MAIL_PASSWORD"] = os.environ.get("MAIL_PASSWORD", "")
+
+    # Initialize Flask-Mail
     mail.init_app(app)
     app.extensions["mail"] = mail
 
@@ -307,11 +311,9 @@ def create_app():
 
     return app
 
-
+# ----------------------------
+# Run App
+# ----------------------------
 if __name__ == "__main__":
     app = create_app()
     app.run(debug=True)
-
-
-
-
