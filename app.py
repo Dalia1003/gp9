@@ -13,6 +13,7 @@ def create_app():
 
     # ----------------------------
     # Secret Key
+    app.secret_key = os.environ.get("SECRET_KEY", "dev_secret_key")
     # ----------------------------
     # ----------------------------
 # Email Configuration
