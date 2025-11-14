@@ -20,6 +20,12 @@ def create_app():
     # ----------------------------
     app.config["MAIL_SERVER"] = os.environ.get("MAIL_SERVER", "smtp.gmail.com")
     app.config["MAIL_PORT"] = int(os.environ.get("MAIL_PORT") or 587)
+        try:
+            app.config["MAIL_PORT"] = int(os.environ["MAIL_PORT"])
+        except KeyError:
+            raise RuntimeError("MAIL_PORT environment variable not set on Render")
+        except ValueError:
+            raise RuntimeError("MAIL_PORT must be a number")
     app.config["MAIL_USE_TLS"] = (os.environ.get("MAIL_USE_TLS") or "true").lower() == "true"
     app.config["MAIL_USE_SSL"] = (os.environ.get("MAIL_USE_SSL") or "false").lower() == "true"
     app.config["MAIL_USERNAME"] = os.environ.get("MAIL_USERNAME") or ""
@@ -305,6 +311,7 @@ def create_app():
 if __name__ == "__main__":
     app = create_app()
     app.run(debug=True)
+
 
 
 
