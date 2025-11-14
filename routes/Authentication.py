@@ -140,7 +140,7 @@ def signup():
             msg = Message(
                 subject="Confirm Your Email",
                 sender=current_app.config["MAIL_USERNAME"],
-                recipients=[email],
+                recipients=recipients,
                 html=html_body
             )
             current_app.extensions["mail"].send(msg)
@@ -206,3 +206,4 @@ def check_field():
         result = {"ok": False}
 
     return jsonify(result)
+
