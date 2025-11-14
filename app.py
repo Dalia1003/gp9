@@ -48,10 +48,7 @@ def create_app():
 
     # Initialize Flask-Mail
     mail.init_app(app)
-    app.extensions['mail'] = mail
     
-
-
 
     # ----------------------------
     # Blueprints
@@ -340,6 +337,7 @@ def create_app():
 if __name__ == "__main__":
     app = create_app()
     app.run(debug=True)
+
 
 
 
