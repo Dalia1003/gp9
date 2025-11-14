@@ -14,6 +14,8 @@ def create_app():
 
     # ----------------------------
     # Secret Key
+    app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "fallback-secret-key")
+
     # Email Configuration
     MAIL_SERVER = os.environ.get("MAIL_SERVER", "smtp.gmail.com")
     
@@ -333,6 +335,7 @@ def create_app():
 if __name__ == "__main__":
     app = create_app()
     app.run(debug=True)
+
 
 
 
