@@ -91,7 +91,9 @@
 </footer>
 
 <script>
-// debounce helper
+// ================================
+// Debounce helper (delay typing)
+// ================================
 function debounce(fn, wait) {
     let t;
     return (...args) => {
@@ -100,7 +102,9 @@ function debounce(fn, wait) {
     };
 }
 
-// AJAX check
+// ================================
+// AJAX Validation (username/email)
+// ================================
 async function checkField(field, value) {
     if (!value) return { ok: true, exists: false, valid: false, msg: "" };
 
@@ -110,15 +114,16 @@ async function checkField(field, value) {
 
         let msg = "";
 
+        // Validation messages
         if (!data.valid) {
             if (field === "username") {
                 msg = "Username must start with a letter and be 3–32 chars (letters, numbers, ., _, -).";
             } else {
-                msg = "Invalid email format";
+                msg = "Email must be a valid .com address";
             }
         }
         else if (data.exists) {
-            msg = field === "username" ? "Username already taken" : "Email already in use";
+            msg = (field === "username") ? "Username already taken" : "Email already in use";
         }
 
         return { ...data, msg };
@@ -129,9 +134,13 @@ async function checkField(field, value) {
     }
 }
 
-// update UI
+// ================================
+// Update Field UI (green/red)
+// ================================
 function updateField(input, msgEl, state) {
-    if (!input.value.trim()) {
+    const val = input.value.trim();
+
+    if (!val) {
         input.classList.remove("is-valid", "is-invalid");
         msgEl.textContent = "";
         msgEl.classList.remove("err", "ok");
@@ -153,24 +162,30 @@ function updateField(input, msgEl, state) {
     }
 }
 
-// attach events
+// ================================
+// Attach Events to Inputs
+// ================================
 const usernameEl = document.querySelector("#username");
 const emailEl = document.querySelector("#email");
 const usernameMsg = document.querySelector("#username-msg");
 const emailMsg = document.querySelector("#email-msg");
 
+// Username validation
 usernameEl.addEventListener("input", debounce(async () => {
     const state = await checkField("username", usernameEl.value.trim());
     updateField(usernameEl, usernameMsg, state);
 }, 300));
 
+// Email validation (.com only)
 emailEl.addEventListener("input", debounce(async () => {
     const state = await checkField("email", emailEl.value.trim());
     updateField(emailEl, emailMsg, state);
 }, 300));
 
 
-// LIVE password checklist
+// ================================
+// Password Strength Live Checker
+// ================================
 (function () {
     const pw = document.getElementById('password');
     const list = document.getElementById('pwChecklistLive');
@@ -194,10 +209,13 @@ emailEl.addEventListener("input", debounce(async () => {
 
     pw.addEventListener('input', () => {
         const c = evalPw(pw.value);
+
         ['len', 'upper', 'lower', 'digit', 'special'].forEach(k => setRow(k, c[k]));
 
-        pw.classList.toggle('is-invalid', !Object.values(c).every(Boolean) && pw.value.length > 0);
-        pw.classList.toggle('is-valid', Object.values(c).every(Boolean));
+        const allOk = Object.values(c).every(Boolean);
+
+        pw.classList.toggle('is-invalid', !allOk && pw.value.length > 0);
+        pw.classList.toggle('is-valid', allOk);
     });
 
     pw.addEventListener('focus', () => list.style.display = "block");
@@ -209,4 +227,5 @@ emailEl.addEventListener("input", debounce(async () => {
 
 </body>
 </html>
+
 
