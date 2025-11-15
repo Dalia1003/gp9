@@ -255,30 +255,31 @@ def confirm_email(token):
 def check_field():
     field = request.args.get("field", "")
     value = request.args.get("value", "").strip()
-
     result = {"ok": True, "valid": True, "exists": False}
 
     try:
         if field == "username":
-            pattern = r"^[A-Za-z][A-Za-z0-9._-]{2,31}$"
-            result["valid"] = bool(re.fullmatch(pattern, value))
+            # NEW strict rule: must start with letter + allowed chars
+            regex = r"^[A-Za-z][A-Za-z0-9_.-]{2,31}$"
+            result["valid"] = bool(re.fullmatch(regex, value))
 
-            if result["valid"]:
-                result["exists"] = db.collection("HealthCareP").document(value).get().exists
+            if result["valid"] and db is not None:
+                doc = db.collection("HealthCareP").document(value).get()
+                result["exists"] = doc.exists
 
         elif field == "email":
             result["valid"] = "@" in value and "." in value
-
-            if result["valid"]:
+            if result["valid"] and db is not None:
                 docs = db.collection("HealthCareP").where("Email", "==", value).limit(1).get()
                 result["exists"] = len(docs) > 0
 
         else:
-            result["ok"] = False
+            result = {"ok": False}
 
     except Exception as e:
-        print("❌ AJAX ERROR:", e)
-        traceback.print_exc()
-        result["ok"] = False
+        print("AJAX error:", e)
+        result = {"ok": False}
 
     return jsonify(result)
+
+
