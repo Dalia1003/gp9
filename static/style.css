@@ -1099,21 +1099,22 @@ body main.auth-container-profile {
     }
 
     /* Fix header for phones */
-    header.header {
-        flex-direction: column;
-        justify-content: center;
-        align-items: center;
-        padding: 12px 0 !important;
-        gap: 10px;
-    }
+   header.header {
+    flex-direction: row !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    padding: 12px 20px !important;
+}
+
 
     .header-left img {
         height: 55px !important;
     }
 
-    .header-nav {
-        gap: 16px;
-        font-size: 14px;
+     .header-nav {
+        flex-direction: row !important;
+        gap: 18px !important;
+        margin-left: auto !important;  /* push nav to the right */
     }
 
     /* Login/Signup container */
@@ -1169,5 +1170,6 @@ body main.auth-container-profile {
         padding-left: 10px;
     }
 }
+
 
 
