@@ -5,6 +5,8 @@ from datetime import datetime, date
 import os, json, re
 from werkzeug.security import generate_password_hash
 import threading
+from firebase_admin import credentials, initialize_app
+import firebase_admin
 
 # Initialize Mail globally
 mail = Mail()
@@ -16,43 +18,31 @@ def create_app():
     # Secret Key
     app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "fallback-secret-key")
 
-    # Email Configuration
-        # Email Configuration
-    MAIL_SERVER = os.environ.get("MAIL_SERVER", "smtp.gmail.com")
+    # ----------------------------
+    # Email Configuration (BREVO)
+    app.config["MAIL_SERVER"] = "smtp-relay.brevo.com"
+    app.config["MAIL_PORT"] = 587
+    app.config["MAIL_USERNAME"] = os.environ.get("BREVO_SMTP_EMAIL")  # usually your email
+    app.config["MAIL_PASSWORD"] = os.environ.get("BREVO_SMTP_KEY")    # API KEY
+    app.config["MAIL_USE_TLS"] = True
+    app.config["MAIL_USE_SSL"] = False
 
-    # Handle the port safely
-    MAIL_PORT_RAW = os.environ.get("MAIL_PORT")
-
-    if MAIL_PORT_RAW and MAIL_PORT_RAW.isdigit():
-        MAIL_PORT = int(MAIL_PORT_RAW)
-    else:
-        MAIL_PORT = 587  # Default safe value
-
-    MAIL_USE_TLS = os.environ.get("MAIL_USE_TLS", "true").lower() == "true"
-    MAIL_USE_SSL = os.environ.get("MAIL_USE_SSL", "false").lower() == "true"
-    MAIL_USERNAME = os.environ.get("MAIL_USERNAME", "")
-    MAIL_PASSWORD = os.environ.get("MAIL_PASSWORD", "")
-
-    # If not specified, set a default sender
-    MAIL_DEFAULT_SENDER = os.environ.get("MAIL_DEFAULT_SENDER", MAIL_USERNAME)
-
-    app.config.update(
-        MAIL_SERVER=MAIL_SERVER,
-        MAIL_PORT=MAIL_PORT,
-        MAIL_USE_TLS=MAIL_USE_TLS,
-        MAIL_USE_SSL=MAIL_USE_SSL,
-        MAIL_USERNAME=MAIL_USERNAME,
-        MAIL_PASSWORD=MAIL_PASSWORD,
-        MAIL_DEFAULT_SENDER=MAIL_DEFAULT_SENDER
-    )
-
-    # Initialize Flask-Mail
     mail.init_app(app)
-    
+
+    # ----------------------------
+    # Firebase Initialization FIXED
+    try:
+        if not firebase_admin._apps:
+            cred_path = os.environ.get("FIREBASE_CRED_PATH", "serviceAccountKey.json")
+            if not os.path.exists(cred_path):
+                raise FileNotFoundError(f"Missing Firebase credentials: {cred_path}")
+            cred = credentials.Certificate(cred_path)
+            initialize_app(cred)
+    except Exception as e:
+        print("❌ Firebase failed to initialize:", e)
 
     # ----------------------------
     # Blueprints
-    # ----------------------------
     from routes.Authentication import auth_bp
     app.register_blueprint(auth_bp)
 
@@ -61,7 +51,6 @@ def create_app():
 
     # ----------------------------
     # Load ICD Data
-    # ----------------------------
     ICD_FILE = os.path.join(app.root_path, "static", "icd_data.json")
     if os.path.exists(ICD_FILE):
         with open(ICD_FILE, "r", encoding="utf-8") as f:
@@ -71,7 +60,6 @@ def create_app():
 
     # ----------------------------
     # Routes
-    # ----------------------------
     @app.route("/")
     def home():
         return render_template("homePage.html")
@@ -79,7 +67,7 @@ def create_app():
     @app.route("/dashboard")
     def dashboard():
         if 'user_id' not in session:
-            return redirect(url_for('Authentication.login'))
+            return redirect(url_for('auth_bp.login'))  # FIXED
 
         patients = []
         try:
@@ -104,11 +92,10 @@ def create_app():
 
     # ----------------------------
     # Add Patient
-    # ----------------------------
     @app.route("/add_patient", methods=["GET", "POST"])
     def add_patient():
         if 'user_id' not in session:
-            return redirect(url_for('Authentication.login'))
+            return redirect(url_for('auth_bp.login'))
 
         errors = []
         if request.method == "POST":
@@ -162,12 +149,11 @@ def create_app():
         return render_template("add_patient.html", errors=errors)
 
     # ----------------------------
-    # Add Medical Note with ICD Codes
-    # ----------------------------
+    # Medical Notes (ICD)
     @app.route("/MedicalNotes", methods=["GET", "POST"])
     def add_note():
         if 'user_id' not in session:
-            return redirect(url_for('Authentication.login'))
+            return redirect(url_for('auth_bp.login'))
 
         if request.method == "GET":
             prefilled_pid = request.args.get("pid", "")
@@ -196,17 +182,15 @@ def create_app():
             }
             note_ref.set(note_data)
 
-            # Save each ICD code
             for code in icd_codes:
-                icd_ref = note_ref.collection("ICDCode").document()  # Auto ID
-                icd_data = {
+                icd_ref = note_ref.collection("ICDCode").document()
+                icd_ref.set({
                     "ICD_ID": icd_ref.id,
                     "Adjusted": [{"Code": code.get("Code"), "Description": code.get("Description")}],
                     "Predicted": [],
                     "AdjustedBy": session.get("user_id"),
                     "AdjustedAt": datetime.now()
-                }
-                icd_ref.set(icd_data)
+                })
 
             return jsonify({"status": "success", "redirect": url_for("dashboard")})
 
@@ -215,19 +199,16 @@ def create_app():
 
     # ----------------------------
     # Check Patient ID
-    # ----------------------------
     @app.route("/check_id")
     def check_id():
         v = request.args.get("v", "").strip()
         exists = False
         if v:
-            doc_ref = db.collection("Patients").document(v)
-            exists = doc_ref.get().exists
+            exists = db.collection("Patients").document(v).get().exists
         return jsonify({"exists": exists})
 
     # ----------------------------
     # ICD Routes
-    # ----------------------------
     @app.route("/icd_categories")
     def icd_categories():
         categories = sorted({cat["Category"] for cat in app.icd_data if "Category" in cat})
@@ -247,7 +228,7 @@ def create_app():
                     break
         return jsonify(results[:100])
 
-    @app.route("/search_icd", methods=["GET"])
+    @app.route("/search_icd")
     def search_icd():
         term = request.args.get("term", "").lower()
         category = request.args.get("category", "").lower()
@@ -261,15 +242,15 @@ def create_app():
             for code in cat.get("Codes", []):
                 if term in code["Description"].lower() or term in code["Code"].lower():
                     results.append(code)
+
         return jsonify(results[:30])
 
     # ----------------------------
     # Profile
-    # ----------------------------
     @app.route("/profile", methods=["GET", "POST"])
     def profile():
         if 'user_id' not in session:
-            return redirect(url_for('Authentication.login'))
+            return redirect(url_for('auth_bp.login'))
 
         doc_id = session['user_id']
         success_msg = ""
@@ -315,12 +296,13 @@ def create_app():
 
     # ----------------------------
     # Logout
-    # ----------------------------
     @app.route("/logout")
     def logout():
         session.clear()
         return redirect(url_for("home"))
 
+    # ----------------------------
+    # Async Email
     def send_async_email(app, msg):
         with app.app_context():
             print("📨 Attempting to send email...")
@@ -330,24 +312,10 @@ def create_app():
             except Exception as e:
                 print("❌ Email sending failed:", e)
 
-
-
     return app
 
 # ----------------------------
 # Run App
-# ----------------------------
 if __name__ == "__main__":
     app = create_app()
-    app.run(debug=True)
-
-
-
-
-
-
-
-
-
-
-
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
