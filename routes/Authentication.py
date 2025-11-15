@@ -34,7 +34,9 @@ BREVO_ENDPOINT = "https://api.brevo.com/v3/smtp/email"
 
 
 def send_brevo_email(to_email: str, subject: str, html_body: str, text_body: str | None = None):
-    """Send email via Brevo HTTP API."""
+    """
+    Send email via Brevo HTTP API.
+    """
     if not BREVO_API_KEY:
         print("❌ BREVO_API_KEY is missing - cannot send email.")
         return
@@ -44,9 +46,7 @@ def send_brevo_email(to_email: str, subject: str, html_body: str, text_body: str
             "email": BREVO_SENDER_EMAIL,
             "name": BREVO_SENDER_NAME,
         },
-        "to": [
-            {"email": to_email}
-        ],
+        "to": [{"email": to_email}],
         "subject": subject,
         "htmlContent": html_body,
     }
@@ -74,7 +74,9 @@ def send_brevo_email(to_email: str, subject: str, html_body: str, text_body: str
 
 
 def send_brevo_email_async(to_email: str, subject: str, html_body: str, text_body: str | None = None):
-    """Run Brevo send in a background thread so signup is fast."""
+    """
+    Run Brevo send in a background thread so signup is fast.
+    """
     def _worker():
         send_brevo_email(to_email, subject, html_body, text_body)
 
@@ -174,7 +176,7 @@ def signup():
                 flash("Username or email already exists.", "error")
                 return render_template("signup.html", entered=entered)
 
-            # Save user (hashed password, email_confirmed=0)
+            # Save user
             hashed_pw = generate_password_hash(password)
             db.collection("HealthCareP").document(username).set({
                 "UserID": username,
@@ -219,7 +221,6 @@ def signup():
             </html>
             """
 
-            # Send async via Brevo API
             send_brevo_email_async(email, subject, html_body, text_body)
 
             flash("✅ Account created! Please check your email to confirm your account.", "success")
@@ -286,13 +287,16 @@ def check_field():
             if result["valid"] and db is not None:
                 doc = db.collection("HealthCareP").document(value).get()
                 result["exists"] = doc.exists
+
         elif field == "email":
             result["valid"] = "@" in value and "." in value
             if result["valid"] and db is not None:
                 docs = db.collection("HealthCareP").where("Email", "==", value).limit(1).get()
                 result["exists"] = len(docs) > 0
+
         else:
             result = {"ok": False}
+
     except Exception as e:
         print("AJAX error:", e)
         traceback.print_exc()
