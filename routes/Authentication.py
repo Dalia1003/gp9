@@ -253,22 +253,39 @@ def signup():
 # ---------------------------------------------------------
 @auth_bp.route("/confirm/<token>")
 def confirm_email(token):
+    s = get_serializer()
+
     try:
-        s = get_serializer()
+        # Try to load token normally with 1-hour expiry
         data = s.loads(token, salt="email-confirm", max_age=3600)
 
     except SignatureExpired:
-        return render_template("confirm.html", msg="⚠️ Link expired.")
+        # Token expired → decode without time check to get username
+        try:
+            data = s.loads(token, salt="email-confirm")
+            username = data.get("username")
+
+            # Delete user because they never confirmed
+            db.collection("HealthCareP").document(username).delete()
+
+            return render_template("confirm.html",
+                                   msg="⚠️ Your confirmation link expired. Your account was removed. Please sign up again.")
+        except Exception:
+            return render_template("confirm.html", msg="⚠️ Invalid or expired link.")
+
     except BadSignature:
         return render_template("confirm.html", msg="⚠️ Invalid link.")
 
+    # If we reach here → token is valid
     username = data.get("username")
-
     ref = db.collection("HealthCareP").document(username)
+
     if not ref.get().exists:
         return render_template("confirm.html", msg="⚠️ Account not found.")
 
+    # Mark email confirmed
     ref.update({"email_confirmed": 1})
+
     return render_template("confirm.html", msg="✅ Email confirmed! You may now log in.")
 
 
