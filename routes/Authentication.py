@@ -7,6 +7,7 @@ from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
 import os
 import re
 import threading
+import traceback
 
 # ----------------------------
 # Blueprint
@@ -14,34 +15,79 @@ import threading
 auth_bp = Blueprint("Authentication", __name__)
 
 # ----------------------------
-# Firebase Setup
+# Firebase Setup (robust)
 # ----------------------------
-if not firebase_admin._apps:
-    cred_path = os.environ.get("FIREBASE_CRED_PATH", "serviceAccountKey.json")
-    cred = credentials.Certificate(cred_path)
-    initialize_app(cred)
-db = firestore.client()
+try:
+    if not firebase_admin._apps:
+        cred_path = os.environ.get("FIREBASE_CRED_PATH", "serviceAccountKey.json")
+        if not os.path.exists(cred_path):
+            raise FileNotFoundError(f"Firebase credential file not found: {cred_path}")
+        cred = credentials.Certificate(cred_path)
+        initialize_app(cred)
+    db = firestore.client()
+except Exception as e:
+    # If Firebase fails to initialize, we still import the blueprint, but keep db=None
+    print("❌ Firebase initialization failed:", e)
+    traceback.print_exc()
+    db = None
 
 # ----------------------------
 # Serializer for email confirmation
 # ----------------------------
+
 def get_serializer():
-    return URLSafeTimedSerializer(current_app.config["SECRET_KEY"])
+    secret = current_app.config.get("SECRET_KEY")
+    if not secret:
+        raise RuntimeError("SECRET_KEY is not configured - required for token generation")
+    return URLSafeTimedSerializer(secret)
 
 # ----------------------------
-# Async Email Sending
+# Helper: get_mail() - safe access to flask-mail instance
 # ----------------------------
+
+def get_mail():
+    # Prefer the extension registered on current_app. This is the standard way.
+    mail_ext = current_app.extensions.get("mail") if hasattr(current_app, "extensions") else None
+    if mail_ext:
+        return mail_ext
+    # Fallback: try importing the `mail` global from app module to support older layouts
+    try:
+        from app import mail as global_mail  # noqa: WPS433 - local import to avoid circular at import time
+        return global_mail
+    except Exception:
+        return None
+
+# ----------------------------
+# Async Email Sending helper
+# ----------------------------
+
 def send_async_email(app, msg):
-    with app.app_context():
-        try:
-            current_app.extensions["mail"].send(msg)
-        except Exception as e:
-            print("❌ Async email sending failed:", e)
+    """Send email inside provided app context in a daemon thread. Logs errors."""
+    try:
+        with app.app_context():
+            mail = get_mail()
+            if not mail:
+                print("❌ No mail extension found to send the message")
+                return
+            # mail might be either the Mail instance or the extension wrapper
+            try:
+                # If mail has attribute `send`, call it
+                mail.send(msg)
+            except Exception as e:
+                # Some Flask-Mail versions store the Mail instance under mail.mail, try that
+                try:
+                    getattr(mail, "mail").send(msg)
+                except Exception:
+                    print("❌ Async email sending failed:", e)
+                    traceback.print_exc()
+    except Exception as outer_e:
+        print("❌ send_async_email top-level failure:", outer_e)
+        traceback.print_exc()
 
 # ----------------------------
 # LOGIN ROUTE
 # ----------------------------
-@auth_bp.route("/login", methods=["GET", "POST"])
+@auth_bp.route("/login", methods=["GET", "POST"]) 
 def login():
     entered_username = ""
     if request.method == "POST":
@@ -51,6 +97,10 @@ def login():
 
         if not username or not password:
             flash("Please enter both username and password.", "error")
+            return render_template("login.html", entered_username=entered_username)
+
+        if db is None:
+            flash("Server configuration error (database). Contact admin.", "error")
             return render_template("login.html", entered_username=entered_username)
 
         try:
@@ -80,6 +130,7 @@ def login():
 
         except Exception as e:
             print("❌ Login error:", e)
+            traceback.print_exc()
             flash("Login failed. Please try again.", "error")
 
     return render_template("login.html", entered_username=entered_username)
@@ -87,7 +138,7 @@ def login():
 # ----------------------------
 # SIGNUP ROUTE
 # ----------------------------
-@auth_bp.route("/signup", methods=["GET", "POST"])
+@auth_bp.route("/signup", methods=["GET", "POST"]) 
 def signup():
     entered = {"first_name": "", "last_name": "", "username": "", "email": ""}
     if request.method == "POST":
@@ -98,68 +149,86 @@ def signup():
         password = request.form.get("password", "")
         entered = {"first_name": first, "last_name": last, "username": username, "email": email}
 
-        # Validation
+        # Basic validation
         if not all([first, last, username, email, password]):
             flash("All fields are required.", "error")
             return render_template("signup.html", entered=entered)
 
+        # Password strength
         if len(password) < 8 or not any(c.isupper() for c in password) or not any(c.islower() for c in password) \
                 or not any(c.isdigit() for c in password) or not any(not c.isalnum() for c in password):
             flash("Password must include uppercase, lowercase, number, and special character.", "error")
             return render_template("signup.html", entered=entered)
 
-        # Check duplicates
-        user_doc = db.collection("HealthCareP").document(username).get()
-        email_docs = db.collection("HealthCareP").where("Email", "==", email).get()
-        if user_doc.exists or len(email_docs) > 0:
-            flash("Username or email already exists.", "error")
+        if db is None:
+            flash("Server configuration error (database). Contact admin.", "error")
             return render_template("signup.html", entered=entered)
 
-        # Save user (hashed password, email_confirmed=0)
-        hashed_pw = generate_password_hash(password)
-        db.collection("HealthCareP").document(username).set({
-            "UserID": username,
-            "Email": email,
-            "Password": hashed_pw,
-            "Name": f"{first} {last}",
-            "email_confirmed": 0
-        })
-
-        # Email confirmation
-        s = get_serializer()
-        token = s.dumps({"username": username, "email": email}, salt="email-confirm")
-        confirm_link = url_for("Authentication.confirm_email", token=token, _external=True)
-
-        html_body = f"""
-        <html>
-        <body style="font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;color:#2d004d;background:#f4eefc;padding:20px;">
-            <div style="max-width:600px;margin:auto;background:#fff;border-radius:10px;padding:30px;box-shadow:0 5px 15px rgba(0,0,0,0.1);">
-            <h2 style="color:#9975C1;text-align:center;">OuwN Email Confirmation</h2>
-            <p>Hi {first} {last},</p>
-            <p>Welcome! Please confirm your email address by clicking the button below:</p>
-            <div style="text-align:center;margin:30px 0;">
-                <a href="{confirm_link}" style="background:#9975C1;color:white;padding:12px 25px;text-decoration:none;border-radius:25px;font-weight:bold;">Confirm Email</a>
-            </div>
-            <p>If you didn't create an account, you can ignore this email.</p>
-            <p>Thanks,<br><strong>OuwN Team</strong></p>
-            </div>
-        </body>
-        </html>
-        """
-
-        # Send email asynchronously
+        # Check duplicates (username and email)
         try:
+            user_doc = db.collection("HealthCareP").document(username).get()
+            email_docs = db.collection("HealthCareP").where("Email", "==", email).limit(1).get()
+            if user_doc.exists or len(email_docs) > 0:
+                flash("Username or email already exists.", "error")
+                return render_template("signup.html", entered=entered)
+
+            # Save user (hashed password, email_confirmed=0)
+            hashed_pw = generate_password_hash(password)
+            db.collection("HealthCareP").document(username).set({
+                "UserID": username,
+                "Email": email,
+                "Password": hashed_pw,
+                "Name": f"{first} {last}",
+                "email_confirmed": 0
+            })
+
+        except Exception as e:
+            print("❌ Firestore save failed:", e)
+            traceback.print_exc()
+            flash("Failed to create account. Contact admin.", "error")
+            return render_template("signup.html", entered=entered)
+
+        # Email confirmation token + message
+        try:
+            s = get_serializer()
+            token = s.dumps({"username": username, "email": email}, salt="email-confirm")
+            confirm_link = url_for("Authentication.confirm_email", token=token, _external=True)
+
+            html_body = f"""
+            <html>
+            <body style="font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;color:#2d004d;background:#f4eefc;padding:20px;">
+                <div style="max-width:600px;margin:auto;background:#fff;border-radius:10px;padding:30px;box-shadow:0 5px 15px rgba(0,0,0,0.1);">
+                <h2 style="color:#9975C1;text-align:center;">OuwN Email Confirmation</h2>
+                <p>Hi {first} {last},</p>
+                <p>Welcome! Please confirm your email address by clicking the button below:</p>
+                <div style="text-align:center;margin:30px 0;">
+                    <a href="{confirm_link}" style="background:#9975C1;color:white;padding:12px 25px;text-decoration:none;border-radius:25px;font-weight:bold;">Confirm Email</a>
+                </div>
+                <p>If you didn't create an account, you can ignore this email.</p>
+                <p>Thanks,<br><strong>OuwN Team</strong></p>
+                </div>
+            </body>
+            </html>
+            """
+
+            # Build message
+            sender = current_app.config.get("MAIL_DEFAULT_SENDER") or current_app.config.get("MAIL_USERNAME")
             msg = Message(
                 subject="Confirm Your Email",
-                sender=current_app.config["MAIL_USERNAME"],
+                sender=sender,
                 recipients=[email],
                 html=html_body
             )
-            threading.Thread(target=send_async_email, args=(current_app._get_current_object(), msg)).start()
+
+            # Send async (daemon thread)
+            thread = threading.Thread(target=send_async_email, args=(current_app._get_current_object(), msg), daemon=True)
+            thread.start()
             flash("✅ Account created! Please check your email to confirm your account.", "success")
+
         except Exception as e:
-            print("❌ Email setup failed:", e)
-            flash("Account created, but failed to send confirmation email. Contact support.", "error")
+            print("❌ Email sending failed:", e)
+            traceback.print_exc()
+            flash("Account created, but failed to send confirmation email. Please contact support.", "error")
 
         return redirect(url_for("Authentication.login"))
 
@@ -170,8 +239,8 @@ def signup():
 # ----------------------------
 @auth_bp.route("/confirm/<token>")
 def confirm_email(token):
-    s = get_serializer()
     try:
+        s = get_serializer()
         data = s.loads(token, salt="email-confirm", max_age=3600)
     except SignatureExpired:
         return render_template("confirm.html", msg="⚠️ Confirmation link expired. Please sign up again.")
@@ -179,22 +248,34 @@ def confirm_email(token):
         return render_template("confirm.html", msg="⚠️ Invalid confirmation link.")
 
     username = data.get("username")
-    doc_ref = db.collection("HealthCareP").document(username)
-    doc = doc_ref.get()
-    if not doc.exists:
-        return render_template("confirm.html", msg="⚠️ Account not found.")
+    if not username:
+        return render_template("confirm.html", msg="⚠️ Invalid confirmation data.")
 
-    user = doc.to_dict()
-    if user.get("email_confirmed", 0):
-        return render_template("confirm.html", msg="✅ Account already confirmed!")
+    if db is None:
+        return render_template("confirm.html", msg="Server error - contact admin.")
 
-    doc_ref.update({"email_confirmed": 1})
-    return render_template("confirm.html", msg="✅ Your email has been confirmed! You can now log in.")
+    try:
+        doc_ref = db.collection("HealthCareP").document(username)
+        doc = doc_ref.get()
+        if not doc.exists:
+            return render_template("confirm.html", msg="⚠️ Account not found.")
+
+        user = doc.to_dict()
+        if user.get("email_confirmed", 0):
+            return render_template("confirm.html", msg="✅ Account already confirmed!")
+
+        doc_ref.update({"email_confirmed": 1})
+        return render_template("confirm.html", msg="✅ Your email has been confirmed! You can now log in.")
+
+    except Exception as e:
+        print("❌ Confirmation update failed:", e)
+        traceback.print_exc()
+        return render_template("confirm.html", msg="⚠️ Failed to confirm account. Contact support.")
 
 # ----------------------------
 # AJAX CHECK FIELD
 # ----------------------------
-@auth_bp.route("/check", methods=["GET"])
+@auth_bp.route("/check", methods=["GET"]) 
 def check_field():
     field = request.args.get("field", "")
     value = request.args.get("value", "").strip()
@@ -203,18 +284,19 @@ def check_field():
     try:
         if field == "username":
             result["valid"] = bool(re.fullmatch(r"[A-Za-z0-9_.-]{3,32}", value))
-            if result["valid"]:
+            if result["valid"] and db is not None:
                 doc = db.collection("HealthCareP").document(value).get()
                 result["exists"] = doc.exists
         elif field == "email":
             result["valid"] = "@" in value and "." in value
-            if result["valid"]:
-                docs = db.collection("HealthCareP").where("Email", "==", value).get()
+            if result["valid"] and db is not None:
+                docs = db.collection("HealthCareP").where("Email", "==", value).limit(1).get()
                 result["exists"] = len(docs) > 0
         else:
             result = {"ok": False}
     except Exception as e:
         print("AJAX error:", e)
+        traceback.print_exc()
         result = {"ok": False}
 
     return jsonify(result)
