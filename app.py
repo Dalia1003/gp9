@@ -1,36 +1,28 @@
+# app.py
 from flask import Flask, render_template, jsonify, request, session, redirect, url_for, flash
-from flask_mail import Mail, Message
-from firebase.Initialization import db  # Firestore client
+from firebase.Initialization import db
 from datetime import datetime, date
 import os, json, re
 from werkzeug.security import generate_password_hash
-import threading
 from firebase_admin import credentials, initialize_app
 import firebase_admin
-
-# Initialize Mail globally
-mail = Mail()
 
 def create_app():
     app = Flask(__name__)
 
     # ----------------------------
     # Secret Key
+    # ----------------------------
     app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "fallback-secret-key")
 
     # ----------------------------
-    # Email Configuration (BREVO)
-    app.config["MAIL_SERVER"] = "smtp-relay.brevo.com"
-    app.config["MAIL_PORT"] = 587
-    app.config["MAIL_USERNAME"] = os.environ.get("BREVO_SMTP_EMAIL")  # usually your email
-    app.config["MAIL_PASSWORD"] = os.environ.get("BREVO_SMTP_KEY")    # API KEY
-    app.config["MAIL_USE_TLS"] = True
-    app.config["MAIL_USE_SSL"] = False
-
-    mail.init_app(app)
+    # REMOVE ALL FLASK-MAIL CONFIG
+    # Because we now use Brevo API (not SMTP)
+    # ----------------------------
 
     # ----------------------------
-    # Firebase Initialization FIXED
+    # Firebase Initialization
+    # ----------------------------
     try:
         if not firebase_admin._apps:
             cred_path = os.environ.get("FIREBASE_CRED_PATH", "serviceAccountKey.json")
@@ -39,18 +31,20 @@ def create_app():
             cred = credentials.Certificate(cred_path)
             initialize_app(cred)
     except Exception as e:
-        print("❌ Firebase failed to initialize:", e)
+        print("❌ Firebase failed:", e)
 
     # ----------------------------
     # Blueprints
-    from routes.Authentication import auth_bp
+    # ----------------------------
+    from routes.Authentication import auth_bp  # uses Brevo API
     app.register_blueprint(auth_bp)
 
-    from routes.auth_reset import reset_bp
+    from routes.auth_reset import reset_bp   # you can update this later to Brevo API too
     app.register_blueprint(reset_bp)
 
     # ----------------------------
     # Load ICD Data
+    # ----------------------------
     ICD_FILE = os.path.join(app.root_path, "static", "icd_data.json")
     if os.path.exists(ICD_FILE):
         with open(ICD_FILE, "r", encoding="utf-8") as f:
@@ -60,6 +54,7 @@ def create_app():
 
     # ----------------------------
     # Routes
+    # ----------------------------
     @app.route("/")
     def home():
         return render_template("homePage.html")
@@ -67,7 +62,7 @@ def create_app():
     @app.route("/dashboard")
     def dashboard():
         if 'user_id' not in session:
-            return redirect(url_for('auth_bp.login'))  # FIXED
+            return redirect(url_for('Authentication.login'))
 
         patients = []
         try:
@@ -92,10 +87,11 @@ def create_app():
 
     # ----------------------------
     # Add Patient
+    # ----------------------------
     @app.route("/add_patient", methods=["GET", "POST"])
     def add_patient():
         if 'user_id' not in session:
-            return redirect(url_for('auth_bp.login'))
+            return redirect(url_for('Authentication.login'))
 
         errors = []
         if request.method == "POST":
@@ -108,7 +104,6 @@ def create_app():
             address = request.form.get("address", "").strip()
             blood = request.form.get("blood_type", "").strip()
 
-            # Validation
             if not all([pid, name, dob, gender, phone, email, address, blood]):
                 errors.append("All fields are required.")
 
@@ -127,7 +122,6 @@ def create_app():
                 except ValueError:
                     errors.append("Invalid date format.")
 
-            # Check if patient exists
             if not errors:
                 doc_ref = db.collection("Patients").document(pid)
                 if doc_ref.get().exists:
@@ -149,16 +143,16 @@ def create_app():
         return render_template("add_patient.html", errors=errors)
 
     # ----------------------------
-    # Medical Notes (ICD)
+    # Medical Notes
+    # ----------------------------
     @app.route("/MedicalNotes", methods=["GET", "POST"])
     def add_note():
         if 'user_id' not in session:
-            return redirect(url_for('auth_bp.login'))
+            return redirect(url_for('Authentication.login'))
 
         if request.method == "GET":
             prefilled_pid = request.args.get("pid", "")
-            return render_template(
-                "MedicalNotes.html",
+            return render_template("MedicalNotes.html",
                 prefilled_pid=prefilled_pid,
                 note_text="",
                 selected_icd_codes=[]
@@ -171,16 +165,16 @@ def create_app():
             icd_codes = data.get("icd_codes", [])
 
             if not pid or not note_text or not icd_codes:
-                return jsonify({"status": "error", "message": "Missing patient ID, note text, or ICD codes"}), 400
+                return jsonify({"status": "error", "message": "Missing required fields"}), 400
 
             patient_ref = db.collection("Patients").document(pid)
-            note_ref = patient_ref.collection("MedicalNotes").document()  # Auto ID
-            note_data = {
+            note_ref = patient_ref.collection("MedicalNotes").document()
+
+            note_ref.set({
                 "NoteID": note_ref.id,
                 "Note": note_text,
                 "CreatedDate": datetime.now()
-            }
-            note_ref.set(note_data)
+            })
 
             for code in icd_codes:
                 icd_ref = note_ref.collection("ICDCode").document()
@@ -199,16 +193,16 @@ def create_app():
 
     # ----------------------------
     # Check Patient ID
+    # ----------------------------
     @app.route("/check_id")
     def check_id():
         v = request.args.get("v", "").strip()
-        exists = False
-        if v:
-            exists = db.collection("Patients").document(v).get().exists
+        exists = db.collection("Patients").document(v).get().exists if v else False
         return jsonify({"exists": exists})
 
     # ----------------------------
     # ICD Routes
+    # ----------------------------
     @app.route("/icd_categories")
     def icd_categories():
         categories = sorted({cat["Category"] for cat in app.icd_data if "Category" in cat})
@@ -237,9 +231,9 @@ def create_app():
 
         results = []
         for cat in app.icd_data:
-            if category and category != "all" and cat["Category"].lower() != category:
+            if category not in ["", "all"] and cat["Category"].lower() != category:
                 continue
-            for code in cat.get("Codes", []):
+            for code in cat["Codes"]:
                 if term in code["Description"].lower() or term in code["Code"].lower():
                     results.append(code)
 
@@ -247,10 +241,11 @@ def create_app():
 
     # ----------------------------
     # Profile
+    # ----------------------------
     @app.route("/profile", methods=["GET", "POST"])
     def profile():
         if 'user_id' not in session:
-            return redirect(url_for('auth_bp.login'))
+            return redirect(url_for('Authentication.login'))
 
         doc_id = session['user_id']
         success_msg = ""
@@ -260,11 +255,12 @@ def create_app():
             doc_ref = db.collection('HealthCareP').document(doc_id)
             doc = doc_ref.get()
             current_user = doc.to_dict() if doc.exists else {"Name": "", "UserID": "", "Email": ""}
+
             if not doc.exists:
                 error_msg = "User data not found."
         except Exception as e:
             current_user = {"Name": "", "UserID": "", "Email": ""}
-            error_msg = f"Error fetching user data: {e}"
+            error_msg = f"Error: {e}"
 
         if request.method == "POST" and request.form.get("action") == "update_profile":
             new_name = request.form.get("name", "").strip()
@@ -277,9 +273,8 @@ def create_app():
                 if not re.match(r"[^@]+@[^@]+\.[^@]+", new_email):
                     raise ValueError("Invalid email format.")
 
-                if new_username != current_user.get("UserID"):
-                    query = db.collection("HealthCareP").where("UserID", "==", new_username).get()
-                    if query:
+                if new_username != current_user["UserID"]:
+                    if db.collection("HealthCareP").document(new_username).get().exists:
                         raise ValueError("Username already taken.")
 
                 doc_ref.update({
@@ -287,35 +282,33 @@ def create_app():
                     "Email": new_email,
                     "UserID": new_username
                 })
+
                 success_msg = "Profile updated successfully."
                 current_user = doc_ref.get().to_dict()
+
             except Exception as e:
                 error_msg = str(e)
 
-        return render_template("profile.html", user=current_user, success_msg=success_msg, error_msg=error_msg)
+        return render_template("profile.html",
+            user=current_user,
+            success_msg=success_msg,
+            error_msg=error_msg
+        )
 
     # ----------------------------
     # Logout
+    # ----------------------------
     @app.route("/logout")
     def logout():
         session.clear()
         return redirect(url_for("home"))
 
-    # ----------------------------
-    # Async Email
-    def send_async_email(app, msg):
-        with app.app_context():
-            print("📨 Attempting to send email...")
-            try:
-                mail.send(msg)
-                print("✅ Email sent successfully!")
-            except Exception as e:
-                print("❌ Email sending failed:", e)
-
     return app
+
 
 # ----------------------------
 # Run App
+# ----------------------------
 if __name__ == "__main__":
     app = create_app()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
