@@ -1,11 +1,8 @@
 # app.py
 from flask import Flask, render_template, jsonify, request, session, redirect, url_for, flash
-from firebase.Initialization import db
+from firebase.Initialization import db   # <-- Firebase initialized here ONLY
 from datetime import datetime, date
 import os, json, re
-from werkzeug.security import generate_password_hash
-from firebase_admin import credentials, initialize_app
-import firebase_admin
 
 def create_app():
     app = Flask(__name__)
@@ -16,30 +13,18 @@ def create_app():
     app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "fallback-secret-key")
 
     # ----------------------------
-    # REMOVE ALL FLASK-MAIL CONFIG
-    # Because we now use Brevo API (not SMTP)
+    # NO FIREBASE INIT HERE
+    # NO FLASK-MAIL
+    # Firebase is initialized ONLY in firebase/Initialization.py
     # ----------------------------
-
-    # ----------------------------
-    # Firebase Initialization
-    # ----------------------------
-    try:
-        if not firebase_admin._apps:
-            cred_path = os.environ.get("FIREBASE_CRED_PATH", "serviceAccountKey.json")
-            if not os.path.exists(cred_path):
-                raise FileNotFoundError(f"Missing Firebase credentials: {cred_path}")
-            cred = credentials.Certificate(cred_path)
-            initialize_app(cred)
-    except Exception as e:
-        print("❌ Firebase failed:", e)
 
     # ----------------------------
     # Blueprints
     # ----------------------------
-    from routes.Authentication import auth_bp  # uses Brevo API
+    from routes.Authentication import auth_bp
     app.register_blueprint(auth_bp)
 
-    from routes.auth_reset import reset_bp   # you can update this later to Brevo API too
+    from routes.auth_reset import reset_bp
     app.register_blueprint(reset_bp)
 
     # ----------------------------
@@ -78,7 +63,7 @@ def create_app():
 
         msg = request.args.get('msg', '')
         msg_text = ""
-        if msg in ['patient_added', 'added']:
+        if msg == 'patient_added' or msg == 'added':
             msg_text = "Patient added successfully!"
         elif msg == 'note_added':
             msg_text = "Medical note and ICD codes added successfully!"
@@ -152,7 +137,8 @@ def create_app():
 
         if request.method == "GET":
             prefilled_pid = request.args.get("pid", "")
-            return render_template("MedicalNotes.html",
+            return render_template(
+                "MedicalNotes.html",
                 prefilled_pid=prefilled_pid,
                 note_text="",
                 selected_icd_codes=[]
@@ -205,7 +191,7 @@ def create_app():
     # ----------------------------
     @app.route("/icd_categories")
     def icd_categories():
-        categories = sorted({cat["Category"] for cat in app.icd_data if "Category" in cat})
+        categories = sorted({cat["Category"] for cat in app.icd_data})
         categories.insert(0, "All")
         return jsonify(categories)
 
@@ -226,6 +212,7 @@ def create_app():
     def search_icd():
         term = request.args.get("term", "").lower()
         category = request.args.get("category", "").lower()
+
         if not term:
             return jsonify([])
 
@@ -306,9 +293,6 @@ def create_app():
     return app
 
 
-# ----------------------------
-# Run App
-# ----------------------------
 if __name__ == "__main__":
     app = create_app()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
