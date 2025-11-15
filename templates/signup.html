@@ -92,54 +92,66 @@
 
 <script>
 // debounce helper
-// debounce helper
 function debounce(fn, wait) {
     let t;
-    return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), wait); };
+    return (...args) => {
+        clearTimeout(t);
+        t = setTimeout(() => fn(...args), wait);
+    };
 }
 
-// AJAX check availability
+// AJAX check
 async function checkField(field, value) {
     if (!value) return { ok: true, exists: false, valid: false, msg: "" };
+
     try {
-        const res = await fetch(`/check?field=${encodeURIComponent(field)}&value=${encodeURIComponent(value)}`);
+        const res = await fetch(`/check?field=${field}&value=${value}`);
         const data = await res.json();
+
         let msg = "";
-        if (!data.valid) msg = field === "username" ? "Invalid username (3–32 letters/numbers/_/-)" : "Invalid email format";
-        else if (data.exists) msg = field === "username" ? "Username already taken" : "Email already in use";
+
+        if (!data.valid) {
+            if (field === "username") {
+                msg = "Username must start with a letter and be 3–32 chars (letters, numbers, ., _, -).";
+            } else {
+                msg = "Invalid email format";
+            }
+        }
+        else if (data.exists) {
+            msg = field === "username" ? "Username already taken" : "Email already in use";
+        }
+
         return { ...data, msg };
+
     } catch (e) {
-        console.error("Check field error:", e);
-        return { ok: false, exists: false, valid: false, msg: "Server error" };
+        console.error("Error:", e);
+        return { ok: false, valid: false, exists: false, msg: "Server error" };
     }
 }
 
-// update input styles & message
+// update UI
 function updateField(input, msgEl, state) {
     if (!input.value.trim()) {
         input.classList.remove("is-valid", "is-invalid");
         msgEl.textContent = "";
-        msgEl.classList.remove("ok", "err");
+        msgEl.classList.remove("err", "ok");
         return;
     }
 
     if (!state.ok || !state.valid || state.exists) {
-        // Invalid state: show red border + message
         input.classList.add("is-invalid");
         input.classList.remove("is-valid");
-        msgEl.textContent = state.msg;   // show error message
+        msgEl.textContent = state.msg;
         msgEl.classList.add("err");
         msgEl.classList.remove("ok");
     } else {
-        // Valid state: show green border, no message
         input.classList.add("is-valid");
         input.classList.remove("is-invalid");
-        msgEl.textContent = "";           // remove message
+        msgEl.textContent = "";
         msgEl.classList.remove("err");
         msgEl.classList.remove("ok");
     }
 }
-
 
 // attach events
 const usernameEl = document.querySelector("#username");
@@ -147,69 +159,54 @@ const emailEl = document.querySelector("#email");
 const usernameMsg = document.querySelector("#username-msg");
 const emailMsg = document.querySelector("#email-msg");
 
-const runUserCheck = debounce(async () => {
+usernameEl.addEventListener("input", debounce(async () => {
     const state = await checkField("username", usernameEl.value.trim());
     updateField(usernameEl, usernameMsg, state);
-}, 300);
+}, 300));
 
-const runEmailCheck = debounce(async () => {
+emailEl.addEventListener("input", debounce(async () => {
     const state = await checkField("email", emailEl.value.trim());
     updateField(emailEl, emailMsg, state);
-}, 300);
+}, 300));
 
-usernameEl.addEventListener("input", runUserCheck);
-emailEl.addEventListener("input", runEmailCheck);
 
-// live password checklist
-(function(){
+// LIVE password checklist
+(function () {
     const pw = document.getElementById('password');
     const list = document.getElementById('pwChecklistLive');
-    function evalPw(v){return{
-        len: v.length>=8,
-        upper:/[A-Z]/.test(v),
-        lower:/[a-z]/.test(v),
-        digit:/\d/.test(v),
-        special:/[^A-Za-z0-9]/.test(v)
-    };}
 
-    function setRow(k,ok){
-        const li = list.querySelector('li[data-k="'+k+'"]');
-        if(!li) return;
-        li.classList.toggle('pw-ok',ok);
-        li.classList.toggle('pw-bad',!ok);
-        li.querySelector('.pw-icon').textContent = ok?'✅':'❌';
+    function evalPw(v) {
+        return {
+            len: v.length >= 8,
+            upper: /[A-Z]/.test(v),
+            lower: /[a-z]/.test(v),
+            digit: /\d/.test(v),
+            special: /[^A-Za-z0-9]/.test(v)
+        };
     }
 
-    pw.addEventListener('input', ()=>{
+    function setRow(k, ok) {
+        const li = list.querySelector(`li[data-k="${k}"]`);
+        li.classList.toggle('pw-ok', ok);
+        li.classList.toggle('pw-bad', !ok);
+        li.querySelector('.pw-icon').textContent = ok ? '✅' : '❌';
+    }
+
+    pw.addEventListener('input', () => {
         const c = evalPw(pw.value);
-        ['len','upper','lower','digit','special'].forEach(k=>setRow(k,c[k]));
-        pw.classList.toggle('is-invalid',!Object.values(c).every(Boolean)&&pw.value.length>0);
-        pw.classList.toggle('is-valid',Object.values(c).every(Boolean));
+        ['len', 'upper', 'lower', 'digit', 'special'].forEach(k => setRow(k, c[k]));
+
+        pw.classList.toggle('is-invalid', !Object.values(c).every(Boolean) && pw.value.length > 0);
+        pw.classList.toggle('is-valid', Object.values(c).every(Boolean));
+    });
+
+    pw.addEventListener('focus', () => list.style.display = "block");
+    pw.addEventListener('blur', () => {
+        if (!pw.value.trim()) list.style.display = "none";
     });
 })();
-// Show/hide password checklist on focus/blur
-(function() {
-  const pw = document.getElementById('password');
-  const list = document.getElementById('pwChecklistLive');
-
-  // Hide the checklist initially
-  list.style.display = "none";
-
-  // When user clicks (focus) on the password field
-  pw.addEventListener('focus', () => {
-    list.style.display = "block";
-  });
-
-  // When user clicks outside (blur)
-  pw.addEventListener('blur', () => {
-    // Optional: hide only if password is empty
-    if (pw.value.trim() === "") {
-      list.style.display = "none";
-    }
-  });
-})();
-
 </script>
 
 </body>
 </html>
+
