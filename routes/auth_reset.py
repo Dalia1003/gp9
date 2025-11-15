@@ -1,6 +1,4 @@
-# routes/auth_reset.py
-
-from flask import Blueprint, render_template, request, flash, redirect, url_for
+from flask import Blueprint, render_template, request, flash, redirect, url_for, current_app
 from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
 from werkzeug.security import generate_password_hash
 from firebase.Initialization import db
@@ -12,79 +10,68 @@ import requests
 
 reset_bp = Blueprint("auth_reset", __name__, url_prefix="/auth/reset")
 
-# -------------------------------------------------
-# Load Brevo settings ONCE (safe for threads)
-# -------------------------------------------------
+
+# ---------------------------------------------------------
+# Token Serializer
+# ---------------------------------------------------------
+def get_serializer():
+    secret = current_app.config.get("SECRET_KEY")
+    return URLSafeTimedSerializer(secret)
+
+
+# ---------------------------------------------------------
+# Brevo Email Setup (SAME as Authentication)
+# ---------------------------------------------------------
 BREVO_API_KEY = os.environ.get("BREVO_API_KEY", "")
 BREVO_SENDER_EMAIL = os.environ.get("BREVO_SENDER_EMAIL", "ouwnsystem@gmail.com")
 BREVO_SENDER_NAME = os.environ.get("BREVO_SENDER_NAME", "OuwN System")
 BREVO_ENDPOINT = "https://api.brevo.com/v3/smtp/email"
 
 
-# -------------------------------------------------
-# Send email (same style as signup)
-# -------------------------------------------------
-def send_brevo_email(to_email, subject, html_body, text_body=None):
-    """Send email via Brevo HTTP API — identical to signup logic"""
-
+def send_brevo_email(to_email: str, subject: str, html: str, text: str = None):
+    """Send email using Brevo API."""
     if not BREVO_API_KEY:
-        print("❌ BREVO_API_KEY missing!")
-        return False
+        print("❌ Missing BREVO_API_KEY")
+        return
 
     payload = {
-        "sender": {
-            "email": BREVO_SENDER_EMAIL,
-            "name": BREVO_SENDER_NAME,
-        },
+        "sender": {"email": BREVO_SENDER_EMAIL, "name": BREVO_SENDER_NAME},
         "to": [{"email": to_email}],
         "subject": subject,
-        "htmlContent": html_body,
+        "htmlContent": html
     }
 
-    if text_body:
-        payload["textContent"] = text_body
+    if text:
+        payload["textContent"] = text
 
     headers = {
         "api-key": BREVO_API_KEY,
-        "Content-Type": "application/json",
-        "accept": "application/json",
+        "Content-Type": "application/json"
     }
 
     try:
-        print(f"📨 Sending reset email to {to_email} ...")
-        res = requests.post(BREVO_ENDPOINT, json=payload, headers=headers, timeout=30)
+        print(f"📨 Sending reset email → {to_email}")
+        res = requests.post(BREVO_ENDPOINT, json=payload, headers=headers)
 
         if res.status_code >= 400:
-            print(f"❌ Brevo Error [{res.status_code}]: {res.text}")
-            return False
-
-        print("✅ Brevo OK:", res.json())
-        return True
+            print("❌ BREVO ERROR:", res.text)
+        else:
+            print("✅ Email sent:", res.json())
 
     except Exception as e:
-        print("❌ Reset email exception:", e)
+        print("❌ Brevo exception:", e)
         traceback.print_exc()
-        return False
 
 
-def send_brevo_email_async(to_email, subject, html_body, text_body=None):
-    """Run Brevo email in background thread — same as signup"""
-    t = threading.Thread(target=lambda: send_brevo_email(to_email, subject, html_body, text_body))
-    t.daemon = True
-    t.start()
+def send_email_async(to, subject, html, text=None):
+    thread = threading.Thread(target=lambda: send_brevo_email(to, subject, html, text))
+    thread.daemon = True
+    thread.start()
 
 
-# -------------------------------------------------
-# Token Serializer
-# -------------------------------------------------
-def get_serializer():
-    from flask import current_app
-    return URLSafeTimedSerializer(current_app.config["SECRET_KEY"])
-
-
-# -------------------------------------------------
-# Step 1 — Request Reset Email
-# -------------------------------------------------
+# ---------------------------------------------------------
+# Request Password Reset
+# ---------------------------------------------------------
 @reset_bp.route("/request", methods=["GET", "POST"])
 def reset_request():
     message = ""
@@ -93,96 +80,103 @@ def reset_request():
         email = request.form.get("email", "").strip()
 
         if not email:
-            message = "Please enter your email."
-            return render_template("reset_password.html", message=message)
+            return render_template("reset_password.html", message="Please enter your email.")
 
-        # Check user exists
+        
+        # Validate general email format 
+        if not re.fullmatch(r"^[^@]+@[^@]+\.[A-Za-z]{2,}$", email):
+            return render_template("reset_password.html", message="Please enter a valid email address.")
+
+
+        # Check if email exists
         users = db.collection("HealthCareP").where("Email", "==", email).get()
         if not users:
-            message = "No account found with this email."
-            return render_template("reset_password.html", message=message)
+            return render_template("reset_password.html", message="No account found with this email.")
 
-        # Generate token
+        # Create token
         s = get_serializer()
         token = s.dumps({"email": email}, salt="password-reset")
         reset_link = url_for("auth_reset.reset_password", token=token, _external=True)
 
-        # Email HTML
+        # Prepare email
+        subject = "OuwN Password Reset"
+        text_body = f"Click here to reset your password: {reset_link}"
+
         html_body = f"""
-        <html><body style='font-family: Arial; background:#f4eefc; padding:20px;'>
-            <div style='max-width:600px;margin:auto;background:#fff;border-radius:10px;padding:25px;'>
-                <h2 style='text-align:center;color:#9975C1;'>Reset Your Password</h2>
-                <p>Click below to reset your password:</p>
-                <div style='text-align:center;margin:20px;'>
-                    <a href="{reset_link}" 
-                       style='background:#9975C1;color:white;padding:12px 22px;border-radius:8px;text-decoration:none;'>
-                        Reset Password
-                    </a>
-                </div>
-                <p>If you did not request this, ignore this email.</p>
-            </div>
-        </body></html>
+        <h2 style="color:#9975C1;">Reset Your Password</h2>
+        <p>Hello, click below to reset your password:</p>
+        <a href="{reset_link}" 
+           style="background:#9975C1;color:white;padding:12px 20px;border-radius:8px;text-decoration:none;">
+           Reset Password
+        </a>
+        <p>If you did not request this, ignore this email.</p>
         """
 
         # Send async
-        send_brevo_email_async(email, "Reset Your Password – OuwN", html_body)
-
-        message = "✅ Reset email sent — check your inbox."
+        try:
+            send_email_async(email, subject, html_body, text_body)
+            message = "✅ Reset email sent! Check your inbox."
+        except Exception as e:
+            print("❌ Error sending reset email:", e)
+            message = "Failed to send email. Try again later."
 
     return render_template("reset_password.html", message=message)
 
 
-# -------------------------------------------------
-# Step 2 — Reset Password (via token)
-# -------------------------------------------------
+# ---------------------------------------------------------
+# Reset Password Page (token)
+# ---------------------------------------------------------
 @reset_bp.route("/<token>", methods=["GET", "POST"])
 def reset_password(token):
     s = get_serializer()
     message = ""
 
+    # Validate token
     try:
         data = s.loads(token, salt="password-reset", max_age=3600)
-        email = data["email"]
+        email = data.get("email")
     except SignatureExpired:
-        message = "⚠️ This reset link has expired."
-        return render_template("reset_password.html", message=message)
+        return render_template("reset_password.html", message="⚠️ The reset link expired.")
     except BadSignature:
-        message = "⚠️ Invalid or broken reset link."
-        return render_template("reset_password.html", message=message)
+        return render_template("reset_password.html", message="⚠️ Invalid reset link.")
 
+    #  Update password
     if request.method == "POST":
-        pw = request.form.get("password", "")
+        password = request.form.get("password", "")
         confirm = request.form.get("confirm_password", "")
 
-        if not pw or not confirm:
-            message = "Please fill all fields."
-            return render_template("reset_token.html", message=message)
+        if not password or not confirm:
+            return render_template("reset_token.html", message="Please fill all fields.")
 
-        if pw != confirm:
-            message = "Passwords do not match."
-            return render_template("reset_token.html", message=message)
+        if password != confirm:
+            return render_template("reset_token.html", message="Passwords do not match.")
 
-        # Password validation
-        if (
-            len(pw) < 8
-            or not re.search(r"[A-Z]", pw)
-            or not re.search(r"[a-z]", pw)
-            or not re.search(r"\d", pw)
-            or not re.search(r"[^A-Za-z0-9]", pw)
-        ):
-            message = "Password must include upper, lower, number & special."
-            return render_template("reset_token.html", message=message)
+        # Validate strength
+        rules = {
+            "length": len(password) >= 8,
+            "upper": bool(re.search(r"[A-Z]", password)),
+            "lower": bool(re.search(r"[a-z]", password)),
+            "digit": bool(re.search(r"\d", password)),
+            "special": bool(re.search(r"[^A-Za-z0-9]", password))
+        }
 
-        # Update password
-        users = db.collection("HealthCareP").where("Email", "==", email).get()
-        if not users:
-            message = "User not found."
-            return render_template("reset_token.html", message=message)
+        if not all(rules.values()):
+            return render_template(
+                "reset_token.html",
+                message="Password must be 8+ chars, include upper/lowercase, digit, and special character."
+            )
 
-        user_ref = users[0].reference
-        user_ref.update({"Password": generate_password_hash(pw)})
+        # Update in Firestore
+        user_docs = db.collection("HealthCareP").where("Email", "==", email).get()
 
-        flash("Password successfully reset!", "success")
+        if not user_docs:
+            return render_template("reset_token.html", message="User not found.")
+
+        # Update the password
+        user_ref = user_docs[0].reference
+        user_ref.update({"Password": generate_password_hash(password)})
+
+        flash("✅ Password reset successfully! Please log in.", "success")
         return redirect(url_for("Authentication.login"))
 
     return render_template("reset_token.html", message=message)
