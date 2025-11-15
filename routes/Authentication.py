@@ -2,7 +2,7 @@ from flask import Blueprint, request, render_template, redirect, url_for, flash,
 from werkzeug.security import generate_password_hash, check_password_hash
 from firebase_admin import credentials, firestore, initialize_app
 import firebase_admin
-from flask_mail import Message
+from email.mime.text import MIMEText
 from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
 import os
 import re
@@ -58,7 +58,40 @@ def get_mail():
         return None
 
 # ----------------------------
-# Async Email Sending helper
+# BREVO SMTP Email Sending helper (Render compatible)
+# ----------------------------
+import smtplib
+from email.mime.multipart import MIMEMultipart
+
+BREVO_HOST = "smtp-relay.brevo.com"
+BREVO_PORT = 587
+
+# Username is always "apikey" for Brevo
+BREVO_USERNAME = "apikey"
+BREVO_PASSWORD = os.environ.get("BREVO_SMTP_KEY", "")  # Store API Key in env
+
+
+def send_async_email(app, msg):
+    """Send email through Brevo SMTP inside app context."""
+    try:
+        with app.app_context():
+            if not BREVO_PASSWORD:
+                print("❌ BREVO_SMTP_KEY is missing in environment variables.")
+                return
+
+            try:
+                server = smtplib.SMTP(BREVO_HOST, BREVO_PORT)
+                server.starttls()
+                server.login(BREVO_USERNAME, BREVO_PASSWORD)
+                server.send_message(msg)
+                server.quit()
+                print("📨 Email sent via Brevo SMTP")
+            except Exception as e:
+                print("❌ SMTP Send Failed:", e)
+                traceback.print_exc()
+    except Exception as outer:
+        print("❌ Async email top-level failure:", outer)
+        traceback.print_exc()
 # ----------------------------
 
 def send_async_email(app, msg):
@@ -213,12 +246,17 @@ def signup():
 
             # Build message
             sender = current_app.config.get("MAIL_DEFAULT_SENDER") or current_app.config.get("MAIL_USERNAME")
-            msg = Message(
+            msg = MIMEMultipart()(
                 subject="Confirm Your Email",
-                sender=sender,
-                recipients=[email],
-                html=html_body
+                
+                
+                
             )
+
+            msg['From'] = sender
+            msg['To'] = email
+            msg['Subject'] = "Confirm Your Email"
+            msg.attach(MIMEText(html_body, 'html'))
 
             # Send async (daemon thread)
             thread = threading.Thread(target=send_async_email, args=(current_app._get_current_object(), msg), daemon=True)
