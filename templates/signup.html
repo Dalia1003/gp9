@@ -119,7 +119,7 @@ async function checkField(field, value) {
             if (field === "username") {
                 msg = "Username must start with a letter and be 3–32 chars (letters, numbers, ., _, -).";
             } else {
-                msg = "Email must be a valid .com address";
+                msg = "Email must be a valid";
             }
         }
         else if (data.exists) {
@@ -227,5 +227,6 @@ emailEl.addEventListener("input", debounce(async () => {
 
 </body>
 </html>
+
 
 
