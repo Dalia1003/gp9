@@ -1086,3 +1086,88 @@ body main.auth-container-profile {
     font-size: 1.75rem;
   }
 }
+/* ------------------------------------
+   FINAL MOBILE FIXES (LOGIN & SIGNUP)
+---------------------------------------*/
+@media (max-width: 600px) {
+
+    /* Body padding so content doesn't touch edges */
+    .auth-page-body {
+        padding: 16px;
+        background-size: cover;
+        display: block; /* override grid */
+    }
+
+    /* Fix header for phones */
+    header.header {
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        padding: 12px 0 !important;
+        gap: 10px;
+    }
+
+    .header-left img {
+        height: 55px !important;
+    }
+
+    .header-nav {
+        gap: 16px;
+        font-size: 14px;
+    }
+
+    /* Login/Signup container */
+    .auth-container {
+        width: 100% !important;
+        max-width: 100% !important;
+        margin: 20px auto;
+        padding: 24px 20px;
+        border-radius: 16px;
+    }
+
+    .auth-title {
+        font-size: 22px !important;
+    }
+
+    .auth-subtitle {
+        font-size: 13px !important;
+    }
+
+    /* Form adjustments */
+    .auth-form {
+        width: 100% !important;
+        gap: 10px;
+    }
+
+    .auth-form label {
+        font-size: 14px;
+    }
+
+    .auth-form input {
+        width: 100% !important;
+        padding: 12px !important;
+        font-size: 15px !important;
+        border-radius: 10px !important;
+    }
+
+    /* Buttons */
+    .btn {
+        width: 100% !important;
+        padding: 12px !important;
+        font-size: 16px !important;
+        border-radius: 10px !important;
+    }
+
+    /* Text under form */
+    .auth-meta {
+        font-size: 13px !important;
+    }
+
+    /* Password checklist */
+    .pw-checklist {
+        font-size: 13px !important;
+        padding-left: 10px;
+    }
+}
+
+
