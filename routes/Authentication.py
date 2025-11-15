@@ -1,14 +1,16 @@
+# routes/Authentication.py
 from flask import Blueprint, request, render_template, redirect, url_for, flash, session, current_app, jsonify
 from werkzeug.security import generate_password_hash, check_password_hash
 from firebase_admin import credentials, firestore, initialize_app
 import firebase_admin
 from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
 import os
 import re
 import threading
 import traceback
-from flask_mail import Message
+import smtplib
 
 # ----------------------------
 # Blueprint
@@ -27,7 +29,6 @@ try:
         initialize_app(cred)
     db = firestore.client()
 except Exception as e:
-    # If Firebase fails to initialize, we still import the blueprint, but keep db=None
     print("❌ Firebase initialization failed:", e)
     traceback.print_exc()
     db = None
@@ -35,7 +36,6 @@ except Exception as e:
 # ----------------------------
 # Serializer for email confirmation
 # ----------------------------
-
 def get_serializer():
     secret = current_app.config.get("SECRET_KEY")
     if not secret:
@@ -43,85 +43,40 @@ def get_serializer():
     return URLSafeTimedSerializer(secret)
 
 # ----------------------------
-# Helper: get_mail() - safe access to flask-mail instance
+# BREVO SMTP (pure smtplib) helper
 # ----------------------------
-
-def get_mail():
-    # Prefer the extension registered on current_app. This is the standard way.
-    mail_ext = current_app.extensions.get("mail") if hasattr(current_app, "extensions") else None
-    if mail_ext:
-        return mail_ext
-    # Fallback: try importing the `mail` global from app module to support older layouts
-    try:
-        from app import mail as global_mail  # noqa: WPS433 - local import to avoid circular at import time
-        return global_mail
-    except Exception:
-        return None
-
-# ----------------------------
-# BREVO SMTP Email Sending helper (Render compatible)
-# ----------------------------
-import smtplib
-from email.mime.multipart import MIMEMultipart
-
 BREVO_HOST = "smtp-relay.brevo.com"
 BREVO_PORT = 587
+BREVO_USERNAME = "apikey"  # Brevo requires username "apikey" for SMTP
+BREVO_PASSWORD = os.environ.get("BREVO_SMTP_KEY", "")  # set in Render/env
 
-# Username is always "apikey" for Brevo
-BREVO_USERNAME = "apikey"
-BREVO_PASSWORD = os.environ.get("BREVO_SMTP_KEY", "")  # Store API Key in env
+BREVO_SENDER = os.environ.get("BREVO_SMTP_EMAIL", None)  # your "From" address
 
-
-def send_async_email(app, msg):
-    """Send email through Brevo SMTP inside app context."""
+def send_smtp_email(app, msg: MIMEMultipart):
+    """Send an email using Brevo SMTP. Runs in a background thread."""
     try:
-        with app.app_context():
-            if not BREVO_PASSWORD:
-                print("❌ BREVO_SMTP_KEY is missing in environment variables.")
-                return
+        # optional debug print
+        print("📨 send_smtp_email: starting SMTP send...")
+        if not BREVO_PASSWORD:
+            print("❌ BREVO_SMTP_KEY not set in environment — email not sent.")
+            return
 
-            try:
-                server = smtplib.SMTP(BREVO_HOST, BREVO_PORT)
-                server.starttls()
-                server.login(BREVO_USERNAME, BREVO_PASSWORD)
-                server.send_message(msg)
-                server.quit()
-                print("📨 Email sent via Brevo SMTP")
-            except Exception as e:
-                print("❌ SMTP Send Failed:", e)
-                traceback.print_exc()
-    except Exception as outer:
-        print("❌ Async email top-level failure:", outer)
-        traceback.print_exc()
-# ----------------------------
-
-def send_async_email(app, msg):
-    """Send email inside provided app context in a daemon thread. Logs errors."""
-    try:
-        with app.app_context():
-            mail = get_mail()
-            if not mail:
-                print("❌ No mail extension found to send the message")
-                return
-            # mail might be either the Mail instance or the extension wrapper
-            try:
-                # If mail has attribute `send`, call it
-                mail.send(msg)
-            except Exception as e:
-                # Some Flask-Mail versions store the Mail instance under mail.mail, try that
-                try:
-                    getattr(mail, "mail").send(msg)
-                except Exception:
-                    print("❌ Async email sending failed:", e)
-                    traceback.print_exc()
-    except Exception as outer_e:
-        print("❌ send_async_email top-level failure:", outer_e)
+        server = smtplib.SMTP(BREVO_HOST, BREVO_PORT, timeout=30)
+        server.ehlo()
+        server.starttls()
+        server.ehlo()
+        server.login(BREVO_USERNAME, BREVO_PASSWORD)
+        server.send_message(msg)
+        server.quit()
+        print("✅ Email sent via Brevo SMTP")
+    except Exception as e:
+        print("❌ SMTP send failed:", e)
         traceback.print_exc()
 
 # ----------------------------
 # LOGIN ROUTE
 # ----------------------------
-@auth_bp.route("/login", methods=["GET", "POST"]) 
+@auth_bp.route("/login", methods=["GET", "POST"])
 def login():
     entered_username = ""
     if request.method == "POST":
@@ -172,7 +127,7 @@ def login():
 # ----------------------------
 # SIGNUP ROUTE
 # ----------------------------
-@auth_bp.route("/signup", methods=["GET", "POST"]) 
+@auth_bp.route("/signup", methods=["GET", "POST"])
 def signup():
     entered = {"first_name": "", "last_name": "", "username": "", "email": ""}
     if request.method == "POST":
@@ -222,12 +177,13 @@ def signup():
             flash("Failed to create account. Contact admin.", "error")
             return render_template("signup.html", entered=entered)
 
-        # Email confirmation token + message
+        # Email confirmation token + message (pure SMTP via Brevo)
         try:
             s = get_serializer()
             token = s.dumps({"username": username, "email": email}, salt="email-confirm")
             confirm_link = url_for("Authentication.confirm_email", token=token, _external=True)
 
+            plain_text = f"Hello {first} {last},\n\nPlease confirm your email by clicking the link: {confirm_link}\n\nIf you didn't create an account, ignore this message."
             html_body = f"""
             <html>
             <body style="font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;color:#2d004d;background:#f4eefc;padding:20px;">
@@ -245,37 +201,25 @@ def signup():
             </html>
             """
 
-            # Build message
-            sender = current_app.config.get("MAIL_DEFAULT_SENDER") or current_app.config.get("MAIL_USERNAME")
-            try:
-                msg = Message(
-                    subject="Confirm Your Email",
-                    sender=os.environ.get("BREVO_SMTP_EMAIL"),
-                    recipients=[email]
-                )
-            
-                msg.body = f"Hello {username}, please confirm your email by clicking the link below."
-                msg.html = f"""
-                    <p>Hello <b>{username}</b>,</p>
-                    <p>Please confirm your email by clicking the link below:</p>
-                    <a href="{verification_link}">{verification_link}</a>
-                """
-            
-                mail.send(msg)
-                print("📧 Email sent successfully!")
-            
-            except Exception as e:
-                print(f"❌ Email sending failed: {e}")
-
-
+            # Build MIME message
+            msg = MIMEMultipart("alternative")
+            sender = BREVO_SENDER or current_app.config.get("MAIL_DEFAULT_SENDER") or current_app.config.get("MAIL_USERNAME")
+            if not sender:
+                print("❌ No sender configured. Set BREVO_SMTP_EMAIL or MAIL_DEFAULT_SENDER.")
             msg['From'] = sender
             msg['To'] = email
-            msg['Subject'] = "Confirm Your Email"
-            msg.attach(MIMEText(html_body, 'html'))
+            msg['Subject'] = "Confirm Your Email - OuwN"
+
+            # Attach plain and HTML parts
+            part1 = MIMEText(plain_text, "plain", "utf-8")
+            part2 = MIMEText(html_body, "html", "utf-8")
+            msg.attach(part1)
+            msg.attach(part2)
 
             # Send async (daemon thread)
-            thread = threading.Thread(target=send_async_email, args=(current_app._get_current_object(), msg), daemon=True)
+            thread = threading.Thread(target=send_smtp_email, args=(current_app._get_current_object(), msg), daemon=True)
             thread.start()
+
             flash("✅ Account created! Please check your email to confirm your account.", "success")
 
         except Exception as e:
@@ -328,7 +272,7 @@ def confirm_email(token):
 # ----------------------------
 # AJAX CHECK FIELD
 # ----------------------------
-@auth_bp.route("/check", methods=["GET"]) 
+@auth_bp.route("/check", methods=["GET"])
 def check_field():
     field = request.args.get("field", "")
     value = request.args.get("value", "").strip()
@@ -353,4 +297,3 @@ def check_field():
         result = {"ok": False}
 
     return jsonify(result)
-
