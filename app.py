@@ -224,7 +224,12 @@ def create_app():
                 if term in code["Description"].lower() or term in code["Code"].lower():
                     results.append(code)
 
-        return jsonify(results[:30])
+        # Remove duplicates by ICD Code
+        unique = {}
+        for item in results:
+            unique[item["Code"]] = item   # keep latest occurrence
+        
+        return jsonify(list(unique.values())[:30])
 
     # ----------------------------
     # Profile
@@ -296,3 +301,4 @@ def create_app():
 if __name__ == "__main__":
     app = create_app()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+
