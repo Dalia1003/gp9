@@ -1173,7 +1173,7 @@ body main.auth-container-profile {
 
 input:focus {
     outline: none !important;
-    box-shadow: none !important; /* remove blue inner highlight */
 }
+
 
 
