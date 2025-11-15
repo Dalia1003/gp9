@@ -8,6 +8,7 @@ import os
 import re
 import threading
 import traceback
+from flask_mail import Message
 
 # ----------------------------
 # Blueprint
@@ -246,12 +247,26 @@ def signup():
 
             # Build message
             sender = current_app.config.get("MAIL_DEFAULT_SENDER") or current_app.config.get("MAIL_USERNAME")
-            msg = MIMEMultipart()(
-                subject="Confirm Your Email",
-                
-                
-                
-            )
+            try:
+                msg = Message(
+                    subject="Confirm Your Email",
+                    sender=os.environ.get("BREVO_SMTP_EMAIL"),
+                    recipients=[email]
+                )
+            
+                msg.body = f"Hello {username}, please confirm your email by clicking the link below."
+                msg.html = f"""
+                    <p>Hello <b>{username}</b>,</p>
+                    <p>Please confirm your email by clicking the link below:</p>
+                    <a href="{verification_link}">{verification_link}</a>
+                """
+            
+                mail.send(msg)
+                print("📧 Email sent successfully!")
+            
+            except Exception as e:
+                print(f"❌ Email sending failed: {e}")
+
 
             msg['From'] = sender
             msg['To'] = email
@@ -338,3 +353,4 @@ def check_field():
         result = {"ok": False}
 
     return jsonify(result)
+
