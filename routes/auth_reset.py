@@ -1,75 +1,90 @@
-from flask import Blueprint, render_template, request, flash, redirect, url_for, current_app
+# routes/auth_reset.py
+
+from flask import Blueprint, render_template, request, flash, redirect, url_for
 from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
 from werkzeug.security import generate_password_hash
-import threading
-import re
-import requests
-
 from firebase.Initialization import db
+import os
+import re
+import threading
+import traceback
+import requests
 
 reset_bp = Blueprint("auth_reset", __name__, url_prefix="/auth/reset")
 
+# -------------------------------------------------
+# Load Brevo settings ONCE (safe for threads)
+# -------------------------------------------------
+BREVO_API_KEY = os.environ.get("BREVO_API_KEY", "")
+BREVO_SENDER_EMAIL = os.environ.get("BREVO_SENDER_EMAIL", "ouwnsystem@gmail.com")
+BREVO_SENDER_NAME = os.environ.get("BREVO_SENDER_NAME", "OuwN System")
+BREVO_ENDPOINT = "https://api.brevo.com/v3/smtp/email"
 
-# ------------------------------------------------------
-# TOKEN SERIALIZER
-# ------------------------------------------------------
-def get_serializer():
-    return URLSafeTimedSerializer(current_app.config["SECRET_KEY"])
 
+# -------------------------------------------------
+# Send email (same style as signup)
+# -------------------------------------------------
+def send_brevo_email(to_email, subject, html_body, text_body=None):
+    """Send email via Brevo HTTP API — identical to signup logic"""
 
-# ------------------------------------------------------
-# THREAD-SAFE BREVO EMAIL FUNCTION
-# ------------------------------------------------------
-def send_brevo_email_thread(api_key, sender_email, sender_name, to_email, subject, html_body):
-    headers = {
-        "api-key": api_key,
-        "Content-Type": "application/json",
-    }
+    if not BREVO_API_KEY:
+        print("❌ BREVO_API_KEY missing!")
+        return False
 
     payload = {
-        "sender": {"email": sender_email, "name": sender_name},
+        "sender": {
+            "email": BREVO_SENDER_EMAIL,
+            "name": BREVO_SENDER_NAME,
+        },
         "to": [{"email": to_email}],
         "subject": subject,
         "htmlContent": html_body,
     }
 
+    if text_body:
+        payload["textContent"] = text_body
+
+    headers = {
+        "api-key": BREVO_API_KEY,
+        "Content-Type": "application/json",
+        "accept": "application/json",
+    }
+
     try:
-        r = requests.post(
-            "https://api.brevo.com/v3/smtp/email",
-            json=payload,
-            headers=headers,
-            timeout=20
-        )
-        print("BREVO RESPONSE:", r.status_code, r.text)
+        print(f"📨 Sending reset email to {to_email} ...")
+        res = requests.post(BREVO_ENDPOINT, json=payload, headers=headers, timeout=30)
+
+        if res.status_code >= 400:
+            print(f"❌ Brevo Error [{res.status_code}]: {res.text}")
+            return False
+
+        print("✅ Brevo OK:", res.json())
+        return True
+
     except Exception as e:
-        print("❌ Brevo Thread Error:", e)
-
-
-# ------------------------------------------------------
-# SAFE CALLER FUNCTION (RUNS INSIDE FLASK CONTEXT)
-# ------------------------------------------------------
-def send_brevo_email(to_email, subject, html_body):
-    api_key = current_app.config.get("BREVO_API_KEY")
-    sender_email = current_app.config.get("BREVO_SENDER_EMAIL", "ouwnsystem@gmail.com")
-    sender_name = current_app.config.get("BREVO_SENDER_NAME", "OuwN System")
-
-    if not api_key:
-        print("❌ BREVO_API_KEY missing!")
+        print("❌ Reset email exception:", e)
+        traceback.print_exc()
         return False
 
-    # Start background thread
-    thread = threading.Thread(
-        target=send_brevo_email_thread,
-        args=(api_key, sender_email, sender_name, to_email, subject, html_body),
-        daemon=True
-    )
-    thread.start()
-    return True
+
+def send_brevo_email_async(to_email, subject, html_body, text_body=None):
+    """Run Brevo email in background thread — same as signup"""
+    t = threading.Thread(target=lambda: send_brevo_email(to_email, subject, html_body, text_body))
+    t.daemon = True
+    t.start()
 
 
-# ------------------------------------------------------
-# STEP 1 — REQUEST PASSWORD RESET
-# ------------------------------------------------------
+# -------------------------------------------------
+# Token Serializer
+# -------------------------------------------------
+def get_serializer():
+    from flask import current_app
+    return URLSafeTimedSerializer(current_app.config["SECRET_KEY"])
+
+
+# -------------------------------------------------
+# Step 1 — Request Reset Email
+# -------------------------------------------------
 @reset_bp.route("/request", methods=["GET", "POST"])
 def reset_request():
     message = ""
@@ -81,110 +96,93 @@ def reset_request():
             message = "Please enter your email."
             return render_template("reset_password.html", message=message)
 
+        # Check user exists
         users = db.collection("HealthCareP").where("Email", "==", email).get()
         if not users:
             message = "No account found with this email."
             return render_template("reset_password.html", message=message)
 
-        # Create reset token
+        # Generate token
         s = get_serializer()
         token = s.dumps({"email": email}, salt="password-reset")
         reset_link = url_for("auth_reset.reset_password", token=token, _external=True)
 
-        # HTML Body
+        # Email HTML
         html_body = f"""
-        <html>
-        <body style="font-family: Arial; background: #f4eefc; padding: 20px;">
-            <div style="max-width: 600px; margin: auto; background: #fff; border-radius: 10px;
-                        padding: 30px; box-shadow: 0 5px 15px rgba(0,0,0,0.1);">
-                <h2 style="color: #9975C1; text-align: center;">Reset Your Password</h2>
-
-                <p>You requested a password reset for your OuwN account.</p>
-
-                <div style="text-align: center; margin: 30px 0;">
+        <html><body style='font-family: Arial; background:#f4eefc; padding:20px;'>
+            <div style='max-width:600px;margin:auto;background:#fff;border-radius:10px;padding:25px;'>
+                <h2 style='text-align:center;color:#9975C1;'>Reset Your Password</h2>
+                <p>Click below to reset your password:</p>
+                <div style='text-align:center;margin:20px;'>
                     <a href="{reset_link}" 
-                       style="background:#9975C1;color:white;padding:12px 25px;
-                       text-decoration:none;border-radius:8px;font-size:16px;">
-                       Reset Password
+                       style='background:#9975C1;color:white;padding:12px 22px;border-radius:8px;text-decoration:none;'>
+                        Reset Password
                     </a>
                 </div>
-
-                <p>If you didn't request this, you can ignore this email.</p>
-                <p style="margin-top: 30px;">— OuwN Team</p>
+                <p>If you did not request this, ignore this email.</p>
             </div>
-        </body>
-        </html>
+        </body></html>
         """
 
-        sent = send_brevo_email(
-            to_email=email,
-            subject="OuwN Password Reset",
-            html_body=html_body
-        )
+        # Send async
+        send_brevo_email_async(email, "Reset Your Password – OuwN", html_body)
 
-        if sent:
-            message = "✅ Password reset email sent. Check your inbox."
-        else:
-            message = "❌ Failed to send email. Please try again."
+        message = "✅ Reset email sent — check your inbox."
 
     return render_template("reset_password.html", message=message)
 
 
-# ------------------------------------------------------
-# STEP 2 — RESET PASSWORD USING TOKEN
-# ------------------------------------------------------
+# -------------------------------------------------
+# Step 2 — Reset Password (via token)
+# -------------------------------------------------
 @reset_bp.route("/<token>", methods=["GET", "POST"])
 def reset_password(token):
     s = get_serializer()
     message = ""
 
-    # Validate token
     try:
         data = s.loads(token, salt="password-reset", max_age=3600)
         email = data["email"]
     except SignatureExpired:
-        message = "⚠️ Reset link expired."
+        message = "⚠️ This reset link has expired."
         return render_template("reset_password.html", message=message)
     except BadSignature:
-        message = "⚠️ Invalid reset link."
+        message = "⚠️ Invalid or broken reset link."
         return render_template("reset_password.html", message=message)
 
-    # POST → Update password
     if request.method == "POST":
-        password = request.form.get("password", "")
+        pw = request.form.get("password", "")
         confirm = request.form.get("confirm_password", "")
 
-        if not password or not confirm:
+        if not pw or not confirm:
             message = "Please fill all fields."
             return render_template("reset_token.html", message=message)
 
-        if password != confirm:
+        if pw != confirm:
             message = "Passwords do not match."
             return render_template("reset_token.html", message=message)
 
-        # Validate password rules
-        pw_ok = (
-            len(password) >= 8 and
-            re.search(r"[A-Z]", password) and
-            re.search(r"[a-z]", password) and
-            re.search(r"\d", password) and
-            re.search(r"[^A-Za-z0-9]", password)
-        )
-
-        if not pw_ok:
-            message = "Password must include upper, lower, number, and special character."
+        # Password validation
+        if (
+            len(pw) < 8
+            or not re.search(r"[A-Z]", pw)
+            or not re.search(r"[a-z]", pw)
+            or not re.search(r"\d", pw)
+            or not re.search(r"[^A-Za-z0-9]", pw)
+        ):
+            message = "Password must include upper, lower, number & special."
             return render_template("reset_token.html", message=message)
 
-        # Save new password
+        # Update password
         users = db.collection("HealthCareP").where("Email", "==", email).get()
         if not users:
             message = "User not found."
             return render_template("reset_token.html", message=message)
 
         user_ref = users[0].reference
-        user_ref.update({"Password": generate_password_hash(password)})
+        user_ref.update({"Password": generate_password_hash(pw)})
 
-        flash("✅ Password updated successfully! Please log in.", "success")
+        flash("Password successfully reset!", "success")
         return redirect(url_for("Authentication.login"))
 
     return render_template("reset_token.html", message=message)
