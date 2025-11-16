@@ -1,99 +1,115 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Sign Up • OuwN</title>
-<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-<style>
-  .banner { display:none; padding:12px 16px; border-radius:10px; margin:12px auto 0; max-width:540px; text-align:center; }
-  .banner.show{ display:block; }
-  .banner.err{ background:#f44336; color:#fff; }
-  .banner.ok{  background:#2e7d32; color:#fff; }
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sign Up • OuwN</title>
 
-  .auth-form { max-width:540px; margin:0 auto; }
-  .auth-form label { display:block; font-weight:600; margin-top:12px; }
-  .auth-form input { width:100%; padding:10px 12px; border:1px solid #ccc; border-radius:8px; margin-top:6px; }
-  input.is-valid { border-color: #2e7d32; box-shadow: 0 0 0 3px rgba(46,125,50,.25); }
-  input.is-invalid { border-color: #e53935; box-shadow: 0 0 0 3px rgba(229,57,53,.25); }
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 
-  .pw-checklist { list-style:none; padding-left:0; margin-top:8px; }
-  .pw-checklist li { margin-bottom:6px; }
-  .pw-ok .pw-icon { color: #2e7d32; }
-  .pw-bad .pw-icon { color: #f44336; }
-  .field-msg { font-size: 0.875rem; margin-top: 4px; display:block; }
-.field-msg.ok { color: #2e7d32; }  /* green */
-.field-msg.err { color: #e53935; } /* red */
+    <style>
+        /* Flash banners */
+        .banner { display:none; padding:12px 16px; border-radius:10px; margin:12px auto 0; max-width:540px; text-align:center; }
+        .banner.show { display:block; }
+        .banner.err { background:#f44336; color:#fff; }
+        .banner.ok  { background:#2e7d32; color:#fff; }
 
-</style>
+        /* Form fields */
+        .auth-form { max-width:540px; margin:0 auto; }
+        .auth-form label { display:block; font-weight:600; margin-top:12px; }
+        .auth-form input { width:100%; padding:10px 12px; border:1px solid #ccc; border-radius:8px; margin-top:6px; }
+
+        /* Input validation colors */
+        input.is-valid   { border-color:#2e7d32; box-shadow:0 0 0 3px rgba(46,125,50,.25); }
+        input.is-invalid { border-color:#e53935; box-shadow:0 0 0 3px rgba(229,57,53,.25); }
+
+        /* Password checklist */
+        .pw-checklist { list-style:none; padding-left:0; margin-top:8px; }
+        .pw-checklist li { margin-bottom:6px; }
+        .pw-ok .pw-icon { color:#2e7d32; }
+        .pw-bad .pw-icon { color:#f44336; }
+
+        /* Field messages */
+        .field-msg { font-size:0.875rem; margin-top:4px; display:block; }
+        .field-msg.ok { color:#2e7d32; }
+        .field-msg.err { color:#e53935; }
+    </style>
 </head>
+
 <body class="auth-page-body">
 
-
+<!-- Header -->
 <header class="header">
-  <div class="header-left">
-    <img src="{{ url_for('static', filename='logo.svg') }}" alt="OuwN Logo" class="logo-img">
-  </div>
-  <nav class="header-nav">
-    <a href="{{ url_for('home') }}#about">About</a>
-    <a href="{{ url_for('home') }}#vision">Vision</a>
-  </nav>
+    <div class="header-left">
+        <img src="{{ url_for('static', filename='logo.svg') }}" alt="OuwN Logo" class="logo-img">
+    </div>
+    <nav class="header-nav">
+        <a href="{{ url_for('home') }}#about">About</a>
+        <a href="{{ url_for('home') }}#vision">Vision</a>
+    </nav>
 </header>
 
+<!-- Flash messages -->
 {% with messages = get_flashed_messages(with_categories=true) %}
-  {% if messages %}
-    {% for category, message in messages %}
-      <div class="banner {{ 'ok' if category=='success' else 'err' }} show">{{ message }}</div>
-    {% endfor %}
-  {% endif %}
+    {% if messages %}
+        {% for category, message in messages %}
+            <div class="banner {{ 'ok' if category=='success' else 'err' }} show">{{ message }}</div>
+        {% endfor %}
+    {% endif %}
 {% endwith %}
 
 <main class="auth-container">
-  <h2 class="auth-title">Create your account</h2>
-  <form method="POST" action="{{ url_for('Authentication.signup') }}" class="auth-form">
-    <label>First name</label>
-    <input id="first_name" name="first_name" type="text" placeholder="e.g., Sara" required
-           value="{{ entered.first_name }}">
+    <h2 class="auth-title">Create your account</h2>
 
-    <label>Last name</label>
-    <input id="last_name" name="last_name" type="text" placeholder="e.g., Al-Harbi" required
-           value="{{ entered.last_name }}">
+    <!-- Signup form -->
+    <form method="POST" action="{{ url_for('Authentication.signup') }}" class="auth-form">
 
-    <label>Username</label>
-    <input id="username" name="username" type="text" placeholder="Choose a username" required
-           value="{{ entered.username }}">
-    <small id="username-msg" class="field-msg"></small>
+        <label>First name</label>
+        <input id="first_name" name="first_name" type="text"
+               placeholder="e.g., Sara" required value="{{ entered.first_name }}">
 
-    <label>Email</label>
-    <input id="email" name="email" type="email" placeholder="you@example.com" required
-           value="{{ entered.email }}">
-    <small id="email-msg" class="field-msg"></small>
+        <label>Last name</label>
+        <input id="last_name" name="last_name" type="text"
+               placeholder="e.g., Al-Harbi" required value="{{ entered.last_name }}">
 
-    <label>Password</label>
-    <input id="password" name="password" type="password" placeholder="Create a password" required>
+        <label>Username</label>
+        <input id="username" name="username" type="text"
+               placeholder="Choose a username" required value="{{ entered.username }}">
+        <small id="username-msg" class="field-msg"></small>
 
-    <ul class="pw-checklist" id="pwChecklistLive">
-      <li data-k="len"><span class="pw-icon">❌</span> At least 8 characters</li>
-      <li data-k="upper"><span class="pw-icon">❌</span> Uppercase letter</li>
-      <li data-k="lower"><span class="pw-icon">❌</span> Lowercase letter</li>
-      <li data-k="digit"><span class="pw-icon">❌</span> Number (0–9)</li>
-      <li data-k="special"><span class="pw-icon">❌</span> Special character (!@#…)</li>
-    </ul>
+        <label>Email</label>
+        <input id="email" name="email" type="email"
+               placeholder="you@example.com" required value="{{ entered.email }}">
+        <small id="email-msg" class="field-msg"></small>
 
-    <button type="submit" class="btn">Sign up</button>
-  </form>
+        <label>Password</label>
+        <input id="password" name="password" type="password"
+               placeholder="Create a password" required>
 
-  <p class="auth-meta">Already have an account? <a href="{{ url_for('Authentication.login') }}">Log In</a></p>
+        <!-- Password live rules -->
+        <ul class="pw-checklist" id="pwChecklistLive">
+            <li data-k="len"><span class="pw-icon">❌</span> At least 8 characters</li>
+            <li data-k="upper"><span class="pw-icon">❌</span> Uppercase letter</li>
+            <li data-k="lower"><span class="pw-icon">❌</span> Lowercase letter</li>
+            <li data-k="digit"><span class="pw-icon">❌</span> Number (0–9)</li>
+            <li data-k="special"><span class="pw-icon">❌</span> Special character (!@#…)</li>
+        </ul>
+
+        <button type="submit" class="btn">Sign up</button>
+    </form>
+
+    <p class="auth-meta">
+        Already have an account?
+        <a href="{{ url_for('Authentication.login') }}">Log In</a>
+    </p>
 </main>
 
 <footer>
-  <p>&copy; 2025 OuwN. All Rights Reserved.</p>
+    <p>&copy; 2025 OuwN. All Rights Reserved.</p>
 </footer>
 
 <script>
-// ================================
-// Debounce helper (delay typing)
-// ================================
+/*  prevent spam calls while typing */
 function debounce(fn, wait) {
     let t;
     return (...args) => {
@@ -102,41 +118,35 @@ function debounce(fn, wait) {
     };
 }
 
-// ================================
-// AJAX Validation (username/email)
-// ================================
+/* AJAX validation request */
 async function checkField(field, value) {
-    if (!value) return { ok: true, exists: false, valid: false, msg: "" };
+    if (!value) return { ok:true, exists:false, valid:false, msg:"" };
 
     try {
         const res = await fetch(`/check?field=${field}&value=${value}`);
         const data = await res.json();
-
         let msg = "";
 
-        // Validation messages
         if (!data.valid) {
-            if (field === "username") {
-                msg = "Username must start with a letter and be 3–32 chars (letters, numbers, ., _, -).";
-            } else {
-                msg = "Email must be a valid";
-            }
+            msg = (field === "username")
+                ? "Username must start with a letter and be 3–32 chars."
+                : "Please enter a valid email address.";
         }
         else if (data.exists) {
-            msg = (field === "username") ? "Username already taken" : "Email already in use";
+            msg = (field === "username")
+                ? "Username already taken"
+                : "Email already in use";
         }
 
         return { ...data, msg };
-
-    } catch (e) {
-        console.error("Error:", e);
-        return { ok: false, valid: false, exists: false, msg: "Server error" };
+    }
+    catch (e) {
+        console.error(e);
+        return { ok:false, valid:false, exists:false, msg:"Server error" };
     }
 }
 
-// ================================
-// Update Field UI (green/red)
-// ================================
+/* Update validation UI */
 function updateField(input, msgEl, state) {
     const val = input.value.trim();
 
@@ -157,38 +167,32 @@ function updateField(input, msgEl, state) {
         input.classList.add("is-valid");
         input.classList.remove("is-invalid");
         msgEl.textContent = "";
-        msgEl.classList.remove("err");
-        msgEl.classList.remove("ok");
+        msgEl.classList.remove("err", "ok");
     }
 }
 
-// ================================
-// Attach Events to Inputs
-// ================================
+/* Inputs */
 const usernameEl = document.querySelector("#username");
-const emailEl = document.querySelector("#email");
+const emailEl    = document.querySelector("#email");
 const usernameMsg = document.querySelector("#username-msg");
-const emailMsg = document.querySelector("#email-msg");
+const emailMsg    = document.querySelector("#email-msg");
 
-// Username validation
+/* Username live check */
 usernameEl.addEventListener("input", debounce(async () => {
     const state = await checkField("username", usernameEl.value.trim());
     updateField(usernameEl, usernameMsg, state);
 }, 300));
 
-// Email validation (.com only)
+/* Email live check */
 emailEl.addEventListener("input", debounce(async () => {
     const state = await checkField("email", emailEl.value.trim());
     updateField(emailEl, emailMsg, state);
 }, 300));
 
-
-// ================================
-// Password Strength Live Checker
-// ================================
+/* Password strength checker */
 (function () {
-    const pw = document.getElementById('password');
-    const list = document.getElementById('pwChecklistLive');
+    const pw = document.getElementById("password");
+    const list = document.getElementById("pwChecklistLive");
 
     function evalPw(v) {
         return {
@@ -202,24 +206,22 @@ emailEl.addEventListener("input", debounce(async () => {
 
     function setRow(k, ok) {
         const li = list.querySelector(`li[data-k="${k}"]`);
-        li.classList.toggle('pw-ok', ok);
-        li.classList.toggle('pw-bad', !ok);
-        li.querySelector('.pw-icon').textContent = ok ? '✅' : '❌';
+        li.classList.toggle("pw-ok", ok);
+        li.classList.toggle("pw-bad", !ok);
+        li.querySelector(".pw-icon").textContent = ok ? "✅" : "❌";
     }
 
-    pw.addEventListener('input', () => {
+    pw.addEventListener("input", () => {
         const c = evalPw(pw.value);
-
-        ['len', 'upper', 'lower', 'digit', 'special'].forEach(k => setRow(k, c[k]));
-
+        ['len','upper','lower','digit','special'].forEach(k => setRow(k, c[k]));
         const allOk = Object.values(c).every(Boolean);
 
-        pw.classList.toggle('is-invalid', !allOk && pw.value.length > 0);
-        pw.classList.toggle('is-valid', allOk);
+        pw.classList.toggle("is-invalid", !allOk && pw.value.length > 0);
+        pw.classList.toggle("is-valid", allOk);
     });
 
-    pw.addEventListener('focus', () => list.style.display = "block");
-    pw.addEventListener('blur', () => {
+    pw.addEventListener("focus", () => list.style.display = "block");
+    pw.addEventListener("blur", () => {
         if (!pw.value.trim()) list.style.display = "none";
     });
 })();
@@ -227,6 +229,3 @@ emailEl.addEventListener("input", debounce(async () => {
 
 </body>
 </html>
-
-
-
