@@ -225,7 +225,7 @@ def create_app():
         return jsonify(categories)
 
 
-    @app.route("/icd_by_category/<category>")
+    @app.route("/icd_by_category/<path:category>")
     def icd_by_category(category):
         if 'user_id' not in session:
             return jsonify({"error": "Unauthorized"}), 401
@@ -275,54 +275,77 @@ def create_app():
         if 'user_id' not in session:
             return redirect(url_for('Authentication.login'))
 
-        user_id = session['user_id']
-        doc_ref = db.collection('HealthCareP').document(user_id)
-        doc = doc_ref.get()
+        old_id = session['user_id']
+        old_ref = db.collection('HealthCareP').document(old_id)
+        doc = old_ref.get()
 
         current_user = doc.to_dict() if doc.exists else {"Name": "", "UserID": "", "Email": ""}
-        success_msg, error_msg = "", ""
 
+        # ---------- POST (Update Profile) ----------
         if request.method == "POST" and request.form.get("action") == "update_profile":
+
             new_name = request.form.get("name", "").strip()
             new_email = request.form.get("email", "").strip()
             new_username = request.form.get("username", "").strip()
 
             try:
+                # Required fields
                 if not new_name or not new_email or not new_username:
-                    raise ValueError("All fields are required.")
+                    flash("All fields are required.", "error")
+                    return redirect(url_for("profile"))
 
-                if not re.match(r"[^@]+@[^@]+\.[^@]+", new_email):
-                    raise ValueError("Invalid email format.")
+                # Email validation
+                if not re.match(r"^[^@]+@[^@]+\.[^@]+$", new_email):
+                    flash("Invalid email format.", "error")
+                    return redirect(url_for("profile"))
 
-                # Username regex validation
-                username_regex = r"^[A-Za-z][A-Za-z0-9._-]{2,31}$"
-                if not re.fullmatch(username_regex, new_username):
-                    raise ValueError("Username must start with a letter and be 3–32 characters.")
+                # Username validation
+                if not re.fullmatch(r"^[A-Za-z][A-Za-z0-9._-]{2,31}$", new_username):
+                    flash("Username must start with a letter and can only contain letters, numbers, dots (.), underscores (_) or hyphens (-). Length must be between 3–32 characters.", "error")
+                    return redirect(url_for("profile"))
 
-                # Check duplicate username
-                if new_username != current_user["UserID"]:
-                    if db.collection("HealthCareP").document(new_username).get().exists:
-                        raise ValueError("Username already taken.")
+                # If username DID NOT change → just update fields
+                if new_username == old_id:
+                    old_ref.update({
+                        "Name": new_name,
+                        "Email": new_email
+                    })
+                    flash("Profile updated successfully!", "success")
+                    return redirect(url_for("profile"))
 
-                # Update Firestore
-                doc_ref.update({
+                # If username CHANGED → create new doc + delete old doc
+                new_ref = db.collection("HealthCareP").document(new_username)
+
+                # Check if new username exists
+                if new_ref.get().exists:
+                    flash("Username already taken.", "error")
+                    return redirect(url_for("profile"))
+
+                # Copy data
+                new_ref.set({
                     "Name": new_name,
                     "Email": new_email,
-                    "UserID": new_username
+                    "UserID": new_username,
+                    "Password": current_user["Password"],
+                    "email_confirmed": current_user.get("email_confirmed", 1)
                 })
 
-                success_msg = "Profile updated successfully."
-                current_user = doc_ref.get().to_dict()
+                # Delete old document
+                old_ref.delete()
+
+                # Update session
+                session['user_id'] = new_username
+                session['user_name'] = new_name
+                session['user_email'] = new_email
+
+                flash("Profile updated successfully!", "success")
+                return redirect(url_for("profile"))
 
             except Exception as e:
-                error_msg = str(e)
+                flash(str(e), "error")
+                return redirect(url_for("profile"))
 
-        return render_template(
-            "profile.html",
-            user=current_user,
-            success_msg=success_msg,
-            error_msg=error_msg
-        )
+        return render_template("profile.html", user=current_user)
 
 
     # ---------------------------------------------------------
