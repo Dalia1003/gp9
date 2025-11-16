@@ -126,6 +126,7 @@ def create_app():
 
             if not errors:
                 db.collection("Patients").document(pid).set({
+                    "UserID": pid,                     # PATIENT ID = National ID
                     "FullName": name,
                     "DOB": dob,
                     "Gender": gender,
@@ -133,7 +134,7 @@ def create_app():
                     "Email": email,
                     "Address": address,
                     "BloodType": blood,
-                    "UserID": session['user_id']
+                    "CreatedBy": session['user_id']    #  Doctor who added the patient
                 })
                 return redirect(url_for("dashboard", msg="added"))
 
@@ -181,17 +182,19 @@ def create_app():
             })
 
             # ICD IDs starting with icdcode_id_XXXXX
-            for code in icd_codes:
-                icd_id = "icdcode_id_" + uuid.uuid4().hex[:8]
-                icd_ref = note_ref.collection("ICDCode").document(icd_id)
+            # Save each ICD code in its own document
+            # ICD IDs starting with icdcode_id_XXXXX
+            icd_id = "icdcode_id_" + uuid.uuid4().hex[:8]
 
-                icd_ref.set({
-                    "ICD_ID": icd_id,
-                    "Adjusted": [code["Code"]],     # ONLY CODE (no description)
-                    "Predicted": [],
-                    "AdjustedBy": session.get("user_id"),
-                    "AdjustedAt": datetime.now()
-                })
+            icd_doc_ref = note_ref.collection("ICDCode").document(icd_id)
+
+            icd_doc_ref.set({
+                "ICD_ID": icd_id,
+                "Adjusted": [c["Code"] for c in icd_codes],   # ARRAY of ALL selected codes
+                "Predicted": [],
+                "AdjustedBy": session.get("user_id"),
+                "AdjustedAt": datetime.now()
+            })
 
             return jsonify({"status": "success", "redirect": url_for("dashboard")})
 
