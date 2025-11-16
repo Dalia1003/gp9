@@ -87,19 +87,19 @@ input, select, textarea, button {
 <body class="form-page medical-note">
 
 {% include "header.html" %}
-    <nav class="ouwn-breadcrumb-bar" role="navigation" aria-label="Breadcrumb">
-      <div class="ouwn-crumbs">
-          <a class="crumb" href="{{ url_for('dashboard') }}">
-          <i class="fa-solid fa-house"></i>
-          <span>Dashboard</span>
-          </a>
-          <span class="sep" aria-hidden="true">/</span>
-          <span class="crumb current" aria-current="page">
-          <i class="fa-solid fa-user"></i>
-          <span>add patient</span>
-          </span>
-      </div>
-    </nav>
+<nav class="ouwn-breadcrumb-bar" role="navigation" aria-label="Breadcrumb">
+  <div class="ouwn-crumbs">
+    <a class="crumb" href="{{ url_for('dashboard') }}">
+      <i class="fa-solid fa-house"></i>
+      <span>Dashboard</span>
+    </a>
+    <span class="sep" aria-hidden="true">/</span>
+    <span class="crumb current" aria-current="page">
+      <i class="fa-solid fa-user"></i>
+      <span>add patient</span>
+    </span>
+  </div>
+</nav>
 
 <main class="container card" style="padding:24px 24px 16px;">
   <h1 style="margin-top:0">Add Patient</h1>
@@ -213,7 +213,7 @@ function setValidity(input, ok, msg){
   fb.classList.toggle('valid', ok);
 }
 
-/* ========== LIVE VALIDATION ONLY FOR: DOB, ID, PHONE, EMAIL ========== */
+/* LIVE VALIDATION ONLY FOR: DOB, ID, PHONE, EMAIL */
 
 // DOB
 const dob = document.getElementById('dob');
