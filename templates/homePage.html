@@ -6,8 +6,10 @@
     <title>OuwN</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
+
 <body>
 
+<!-- Header -->
 <header class="header">
     <div class="header-left">
         <img src="{{ url_for('static', filename='logo.svg') }}" alt="OuwN Logo" class="logo-img">
@@ -20,14 +22,22 @@
     </div>
 </header>
 
+<!-- Hero section -->
 <div class="hero">
     <h2>Welcome to OuwN</h2>
     <p>Spend less time coding, more time with your patients.</p>
-    <button class="btn" onclick="location.href='{{ url_for('Authentication.login') }}'">Get Started</button>
+
+    <!-- Button redirects to login page -->
+    <button class="btn" onclick="location.href='{{ url_for('Authentication.login') }}'">
+        Get Started
+    </button>
+
+    <!-- Quotes -->
     <p class="quote">وَاللهُ فِي عَوْنِ الْعَبْدِ مَا كَانَ الْعَبْدُ فِي عَوْنِ أَخِيهِ</p>
     <p class="quote2">“Allah is in the aid of His worshipper as long as His worshipper is in the aid of his brother.”</p>
 </div>
 
+<!-- About section -->
 <section class="att" id="about">
     <h3>About Us</h3>
     <p>
@@ -37,16 +47,17 @@
     </p>
 </section>
 
+<!-- Vision section -->
 <section class="att" id="vision">
     <h3>Our Vision</h3>
     <p>
-        We envision a future where healthcare professionals focus on patients,
-        not paperwork. Through innovation, automation, and seamless integration,
-        OuwN aims to become the trusted partner in transforming medical documentation
-        into meaningful insights.
+        We envision a future where healthcare professionals focus on patients, not paperwork.
+        Through innovation, automation, and seamless integration, OuwN aims to become the trusted
+        partner in transforming medical documentation into meaningful insights.
     </p>
 </section>
 
+<!-- Footer -->
 <footer>
     <p>&copy; 2025 OuwN. All Rights Reserved.</p>
 </footer>
