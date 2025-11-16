@@ -4,308 +4,346 @@
   <meta charset="UTF-8">
   <title>Add Medical Note & ICD Codes</title>
   <link rel="stylesheet" href="/static/style.css">
+
   <style>
+    /* Layout containers */
     .icd-container { margin-top: 20px; padding: 10px; border: 1px solid #ccc; }
     .result-item { margin: 5px 0; display: flex; align-items: center; padding: 5px; border-bottom: 1px solid #eee; }
 
+    /* Category boxes */
     .category-boxes { display: flex; overflow-x: auto; white-space: nowrap; gap: 8px; margin-bottom: 10px; padding-bottom: 5px; }
-    .category-box { padding: 5px 10px; border: 1px solid #007BFF; border-radius: 5px; background-color: #f0f8ff; cursor: pointer; transition: all 0.2s; flex: 0 0 auto; font-size: 0.9rem; }
-    .category-box:hover, .category-box.active { background-color: #007BFF; color: white; font-weight: bold; }
+    .category-box { padding: 5px 10px; border: 1px solid #007BFF; border-radius: 5px; background-color: #f0f8ff; cursor: pointer; transition: 0.2s; flex: 0 0 auto; font-size: 0.9rem; }
+    .category-box:hover, .category-box.active { background-color: #007BFF; color: #fff; font-weight: bold; }
 
+    /* Selected codes */
     #selectedCodesContainer { display: flex; overflow-x: auto; white-space: nowrap; gap: 5px; margin-bottom: 10px; padding-bottom: 5px; }
-    .selected-code { background-color: #007BFF; color: white; padding: 4px 8px; border-radius: 4px; font-size: 0.85rem; display: flex; align-items: center; gap: 5px; flex: 0 0 auto; }
-    .selected-code span { cursor: pointer; font-weight: bold; }
+    .selected-code { background-color: #007BFF; color: #fff; padding: 4px 8px; border-radius: 4px; font-size: 0.85rem; display: flex; align-items: center; gap: 5px; flex: 0 0 auto; }
 
+    /* Hide scrollbars */
     .category-boxes, #selectedCodesContainer { -ms-overflow-style: none; scrollbar-width: none; }
     .category-boxes::-webkit-scrollbar, #selectedCodesContainer::-webkit-scrollbar { display: none; }
 
+    /* Form layout */
     .row { margin-bottom: 15px; }
     .row label { display: block; margin-bottom: 5px; font-weight: bold; }
     input[type=text], textarea { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
-    button { padding: 15px 12px; border: none; background-color: #007BFF; color: white; border-radius: 4px; cursor: pointer; }
+
+    /* Buttons */
+    button { padding: 15px 12px; border: none; background-color: #007BFF; color: #fff; border-radius: 4px; cursor: pointer; }
     button:hover { background-color: #0056b3; }
-    .banner {
-    display: none;
-    padding: 12px 16px;
-    border-radius: 10px;
-    margin: 12px auto 0;
-    max-width: 540px;
-    text-align: center;
-    font-weight: 600;
-    transition: all 0.3s;
-    position: fixed;
-    top: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 9999;
-    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
-  }
-  .banner.show { display: block; }
-  .banner.success { background: #2e7d32; color: white; }
-  .banner.error { background: #f44336; color: white; }
-  .row.actions {
-  text-align: center;
-  margin-top: 20px;
-}
-/* ---------------- Search Bar Design ---------------- */
-.search-section {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 10px;              /* space between search bar and button */
-  margin-top: 20px;
-  margin-bottom: 10px;
-}
 
-.search-bar {
-  flex: 1;
-  max-width: 450px;
-}
+    /* Floating banner */
+    .banner { display: none; padding: 12px 16px; border-radius: 10px; max-width: 540px; text-align: center; font-weight: 600;
+              position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 9999; box-shadow: 0 4px 10px rgba(0,0,0,0.2); }
+    .banner.show { display: block; }
+    .banner.success { background: #2e7d32; color: #fff; }
+    .banner.error { background: #f44336; color: #fff; }
 
-#searchBox {
-  width: 100%;
-  padding: 12px 14px;
-  border: 2px solid #007BFF;
-  border-radius: 8px;
-  font-size: 1rem;
-  outline: none;
-  transition: all 0.3s;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-}
+    /* Search bar */
+    .search-section { display: flex; justify-content: center; align-items: center; gap: 10px; margin-top: 20px; margin-bottom: 10px; }
+    .search-bar { flex: 1; max-width: 450px; }
+    #searchBox { width: 100%; padding: 12px 14px; border: 2px solid #007BFF; border-radius: 8px; font-size: 1rem; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+    #searchBox:focus { border-color: #0056b3; box-shadow: 0 3px 8px rgba(0,0,0,0.15); }
 
-#searchBox:focus {
-  border-color: #0056b3;
-  box-shadow: 0 3px 8px rgba(0,0,0,0.15);
-}
-
-.search-btn {
-  background-color: #007BFF;
-  color: white;
-  border: none;
-  padding: 12px 22px;
-  font-size: 1rem;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: background-color 0.3s ease;
-}
-
-.search-btn:hover {
-  background-color: #0056b3;
-}
-
+    .search-btn { background-color: #007BFF; padding: 12px 22px; border-radius: 8px; }
+    .search-btn:hover { background-color: #0056b3; }
   </style>
 </head>
+
 <body class="form-page medical-note">
 
 {% include "header.html" %}
 
-<nav class="ouwn-breadcrumb-bar" role="navigation" aria-label="Breadcrumb">
-    <div class="ouwn-crumbs">
-        <a class="crumb" href="{{ url_for('dashboard') }}">
-            <i class="fa-solid fa-house"></i>
-            <span>Dashboard</span>
-        </a>
-        <span class="sep" aria-hidden="true">/</span>
-        <span class="crumb current" aria-current="page">
-        <i class="fa-solid fa-file-medical"></i>
-        <span>Add Medical Notes</span>
-        </span>
-    </div>
+<nav class="ouwn-breadcrumb-bar" role="navigation">
+  <div class="ouwn-crumbs">
+    <a class="crumb" href="{{ url_for('dashboard') }}">
+      <i class="fa-solid fa-house"></i> <span>Dashboard</span>
+    </a>
+    <span class="sep">/</span>
+    <span class="crumb current">
+      <i class="fa-solid fa-file-medical"></i> <span>Add Medical Notes</span>
+    </span>
+  </div>
 </nav>
+
 <div id="saveMessage" class="banner"></div>
+
 <main class="container">
-    <h1>Add Medical Note</h1>
-    <form id="noteForm" class="card">
-        <div class="row">
-            <label for="pid">National ID / Iqama <span class="required">*</span></label>
-            <input name="pid" id="pid" type="text" style="background-color: lightgray;" value="{{ prefilled_pid }}" readonly required />
-        </div>
-        <div class="row">
-            <label for="note_text">Note <span class="required">*</span></label>
-            <textarea name="note_text" id="note_text" rows="6" required>{{ note_text }}</textarea>
-        </div>
-    </form>
+  <h1>Add Medical Note</h1>
 
-    <div class="icd-container">
-        <h2>ICD Code Browser</h2>
-        <div id="categoryBoxes" class="category-boxes"></div>
-        <div id="selectedCodesContainer"></div>
-        <div class="search-section">
-  <div class="search-bar">
-    <input type="text" id="searchBox" placeholder="🔍 Search ICD code or keyword...">
-  </div>
-  <button type="button" class="search-btn" onclick="searchICD()">Search</button>
-</div>
-</div>
-
-        <div id="results" style="margin-top: 10px;"></div>
-         <div class="row actions" style="margin-top: 20px; text-align: center;">
-      <button type="button" id="saveBothBtn">Save Note & ICD Codes</button>
-  </div>
+  <!-- Medical Note Form -->
+  <form id="noteForm" class="card">
+    <div class="row">
+      <label for="pid">National ID / Iqama <span class="required">*</span></label>
+      <input name="pid" id="pid" type="text" value="{{ prefilled_pid }}" readonly style="background-color: lightgray;">
     </div>
+
+    <div class="row">
+      <label for="note_text">Note <span class="required">*</span></label>
+      <textarea name="note_text" id="note_text" rows="6">{{ note_text }}</textarea>
+    </div>
+  </form>
+
+  <!-- ICD Browser -->
+  <div class="icd-container">
+    <h2>ICD Code Browser</h2>
+
+    <div id="categoryBoxes" class="category-boxes"></div>
+    <div id="selectedCodesContainer"></div>
+
+    <div class="search-section">
+      <div class="search-bar">
+        <input type="text" id="searchBox" placeholder="🔍 Search ICD code or keyword...">
+      </div>
+      <button type="button" class="search-btn" onclick="searchICD()">Search</button>
+    </div>
+  </div>
+
+  <div id="results" style="margin-top: 10px;"></div>
+
+  <div class="row actions">
+    <button type="button" id="saveBothBtn">Save Note & ICD Codes</button>
+  </div>
 </main>
 
 <footer>
-    <p>&copy; 2025 OuwN. All Rights Reserved.</p>
+  <p>&copy; 2025 OuwN. All Rights Reserved.</p>
 </footer>
 
 <script>
-let selectedCodes = {{ selected_icd_codes | default([]) | tojson | safe }};
-let currentCategory = "";
+  // ---------- State ----------
+  let selectedCodes = {{ selected_icd_codes | default([]) | tojson | safe }};
+  let currentCategory = "";
+  let currentICDResults = [];   // full result list for current view
+  let renderIndex = 0;          // how many items already rendered
+  const PAGE_SIZE = 40;         // how many codes to render per batch
 
-// -----------------------------
-// Show floating banner message
-// -----------------------------
-function showMessage(msg, type = "success", duration = 3000) {
+  // ---------- Helpers ----------
+  function showMessage(msg, type = "success", duration = 3000) {
     const banner = document.getElementById("saveMessage");
     banner.textContent = msg;
     banner.className = `banner show ${type}`;
-    setTimeout(() => banner.className = "banner", duration);
-}
+    setTimeout(() => (banner.className = "banner"), duration);
+  }
 
-// -----------------------------
-// Update selected codes UI
-// -----------------------------
-function updateSelectedCodesUI() {
+  function updateSelectedCodesUI() {
     const container = document.getElementById("selectedCodesContainer");
     container.innerHTML = "";
-    selectedCodes.forEach(c => {
-        const div = document.createElement("div");
-        div.className = "selected-code";
-        div.innerHTML = `${c.Code} <span onclick="removeCode('${c.Code}')">x</span>`;
-        container.appendChild(div);
+    selectedCodes.forEach((c) => {
+      const div = document.createElement("div");
+      div.className = "selected-code";
+      div.innerHTML = `
+        ${c.Code}
+        <span style="cursor:pointer;font-weight:bold;" onclick="removeCode('${c.Code}')">×</span>
+      `;
+      container.appendChild(div);
     });
-}
+  }
 
-// -----------------------------
-// Remove code
-// -----------------------------
-function removeCode(code) {
-    selectedCodes = selectedCodes.filter(c => c.Code !== code);
+  function removeCode(code) {
+    selectedCodes = selectedCodes.filter((c) => c.Code !== code);
+
+    // Uncheck checkbox if visible
     const cb = document.querySelector(`#results input[data-code='${code}']`);
     if (cb) cb.checked = false;
-    updateSelectedCodesUI();
-}
 
-// -----------------------------
-// Load ICD categories
-// -----------------------------
-window.onload = function() {
     updateSelectedCodesUI();
+  }
 
+  window.removeCode = removeCode; // so onclick in HTML string works
+
+  // ---------- Load Categories ----------
+  function initCategories() {
     fetch("/icd_categories")
-    .then(res => res.json())
-    .then(categories => {
+      .then((res) => res.json())
+      .then((categories) => {
         const container = document.getElementById("categoryBoxes");
-        categories.forEach(cat => {
-            const box = document.createElement("div");
-            box.className = "category-box";
-            box.textContent = cat;
-            box.addEventListener("click", () => {
-                document.querySelectorAll(".category-box").forEach(b => b.classList.remove("active"));
-                box.classList.add("active");
-                currentCategory = cat;
-                loadByCategory(cat);
-            });
-            container.appendChild(box);
+        container.innerHTML = "";
+
+        categories.forEach((cat) => {
+          const box = document.createElement("div");
+          box.className = "category-box";
+          box.textContent = cat;
+          box.onclick = () => {
+            document
+              .querySelectorAll(".category-box")
+              .forEach((b) => b.classList.remove("active"));
+            box.classList.add("active");
+            currentCategory = cat;
+            loadByCategory(cat);
+          };
+          container.appendChild(box);
         });
-    });
-};
+      })
+      .catch(() => {
+        showMessage("Failed to load ICD categories.", "error");
+      });
+  }
 
-// -----------------------------
-// Load ICD codes by category
-// -----------------------------
-function loadByCategory(category) {
-    if (!category) return;
+  // ---------- Load ICD by Category ----------
+  function loadByCategory(category) {
     fetch(`/icd_by_category/${encodeURIComponent(category)}`)
-    .then(res => res.json())
-    .then(data => displayICDResults(data));
-}
+      .then((res) => res.json())
+      .then((data) => {
+        displayICDResults(data);
+      })
+      .catch(() => {
+        showMessage("Error loading ICD codes.", "error");
+      });
+  }
 
-// -----------------------------
-// Search ICD codes
-// -----------------------------
-function searchICD() {
+  // ---------- Search ----------
+  function searchICD() {
     const term = document.getElementById("searchBox").value.trim();
     if (!term) return;
-    fetch(`/search_icd?term=${encodeURIComponent(term)}&category=${encodeURIComponent(currentCategory)}`)
-    .then(res => res.json())
-    .then(data => displayICDResults(data));
-}
 
-// -----------------------------
-// Display ICD results
-// -----------------------------
-function displayICDResults(data) {
+    fetch(
+      `/search_icd?term=${encodeURIComponent(term)}&category=${encodeURIComponent(
+        currentCategory
+      )}`
+    )
+      .then((res) => res.json())
+      .then((data) => {
+        displayICDResults(data);
+      })
+      .catch(() => {
+        showMessage("Error searching ICD codes.", "error");
+      });
+  }
+
+  window.searchICD = searchICD; // used by the Search button onclick
+
+  // ---------- Infinite Scroll Rendering ----------
+  function displayICDResults(data) {
     const resultsDiv = document.getElementById("results");
     resultsDiv.innerHTML = "";
 
-    if (data.length === 0) { 
-        resultsDiv.innerHTML = "<p>No results found.</p>"; 
-        return; 
+    currentICDResults = data || [];
+    renderIndex = 0;
+
+    if (!currentICDResults.length) {
+      resultsDiv.innerHTML = "<p>No results found.</p>";
+      return;
     }
 
-    data.forEach(item => {
-        const div = document.createElement("div");
-        div.className = "result-item";
+    // Render first batch
+    renderNextChunk();
+  }
 
-        const checked = selectedCodes.some(c => c.Code === item.Code) ? "checked" : "";
+  function renderNextChunk() {
+    const resultsDiv = document.getElementById("results");
 
-        div.innerHTML = `
-            <input type="checkbox" data-code="${item.Code}" data-desc="${item.Description}" ${checked}>
-            <strong style="margin-left:5px;">${item.Code}</strong> - ${item.Description}
-        `;
-        resultsDiv.appendChild(div);
-    });
-}
+    if (!currentICDResults.length) return;
+    if (renderIndex >= currentICDResults.length) return;
 
-// -----------------------------
-// Handle checkbox selection
-// -----------------------------
-document.getElementById("results").addEventListener("change", function(e) {
-    if (e.target && e.target.matches("input[type='checkbox']")) {
-        const code = e.target.dataset.code;
-        const desc = e.target.dataset.desc;
+    const end = Math.min(renderIndex + PAGE_SIZE, currentICDResults.length);
+    for (let i = renderIndex; i < end; i++) {
+      const item = currentICDResults[i];
+      const div = document.createElement("div");
+      div.className = "result-item";
 
-        if (e.target.checked) {
-            if (!selectedCodes.find(c => c.Code === code)) selectedCodes.push({ Code: code, Description: desc });
-        } else {
-            selectedCodes = selectedCodes.filter(c => c.Code !== code);
+      const isChecked = selectedCodes.some((c) => c.Code === item.Code)
+        ? "checked"
+        : "";
+
+      div.innerHTML = `
+        <input type="checkbox" data-code="${item.Code}"
+               data-desc="${item.Description}" ${isChecked}>
+        <strong style="margin-left:5px;">${item.Code}</strong> - ${item.Description}
+      `;
+
+      resultsDiv.appendChild(div);
+    }
+
+    renderIndex = end;
+  }
+
+  function handlePageScroll() {
+    // If nothing to render or all rendered → do nothing
+    if (!currentICDResults.length || renderIndex >= currentICDResults.length) {
+      return;
+    }
+
+    const scrollPosition = window.innerHeight + window.scrollY;
+    const threshold = document.body.offsetHeight - 200; // 200px from bottom
+
+    if (scrollPosition >= threshold) {
+      renderNextChunk();
+    }
+  }
+
+  // ---------- Select / Unselect Codes ----------
+  function initResultsListener() {
+    document.getElementById("results").addEventListener("change", (e) => {
+      if (!e.target.matches("input[type='checkbox']")) return;
+
+      const code = e.target.dataset.code;
+      const desc = e.target.dataset.desc;
+
+      if (e.target.checked) {
+        if (!selectedCodes.find((c) => c.Code === code)) {
+          selectedCodes.push({ Code: code, Description: desc });
         }
-        updateSelectedCodesUI();
-    }
-});
+      } else {
+        selectedCodes = selectedCodes.filter((c) => c.Code !== code);
+      }
 
-// -----------------------------
-// Save note and ICD codes
-// -----------------------------
-document.getElementById("saveBothBtn").addEventListener("click", async () => {
-    const pid = document.getElementById("pid").value.trim();
-    const note = document.getElementById("note_text").value.trim();
+      updateSelectedCodesUI();
+    });
+  }
 
-    if (!pid) { showMessage("Patient ID is missing!", "error"); return; }
-    if (!note) { showMessage("Please enter a medical note!", "error"); return; }
-    if (selectedCodes.length === 0) { showMessage("Please select at least one ICD code!", "error"); return; }
+  // ---------- Save Note + ICD Codes ----------
+  function initSaveButton() {
+    document
+      .getElementById("saveBothBtn")
+      .addEventListener("click", async () => {
+        const pid = document.getElementById("pid").value.trim();
+        const note = document.getElementById("note_text").value.trim();
 
-    try {
-        const response = await fetch("/MedicalNotes", {
+        if (!pid) return showMessage("Patient ID is missing!", "error");
+        if (!note) return showMessage("Please enter a medical note!", "error");
+        if (selectedCodes.length === 0)
+          return showMessage("Please select at least one ICD code!", "error");
+
+        try {
+          const response = await fetch("/MedicalNotes", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ pid, note_text: note, icd_codes: selectedCodes })
-        });
+            body: JSON.stringify({
+              pid,
+              note_text: note,
+              icd_codes: selectedCodes,
+            }),
+          });
 
-        const result = await response.json();
-        if (result.status === "success" && result.redirect) {
-            showMessage("✅ Medical note and ICD codes saved successfully!", "success");
-            setTimeout(() => window.location.href = result.redirect, 1500);
-        } else {
-            showMessage("❌ Error: " + result.message, "error");
+          const result = await response.json();
+
+          if (result.status === "success") {
+            showMessage("✅ Saved successfully!", "success");
+            setTimeout(
+              () => (window.location.href = result.redirect),
+              1500
+            );
+          } else {
+            showMessage("❌ " + (result.message || "Error saving data"), "error");
+          }
+        } catch (err) {
+          showMessage("An error occurred while saving.", "error");
         }
-    } catch (err) {
-        console.error("Error:", err);
-        showMessage("An error occurred while saving note and codes.", "error");
-    }
-});
+      });
+  }
+
+  // ---------- Init on Load ----------
+  window.addEventListener("load", () => {
+    updateSelectedCodesUI();
+    initCategories();
+    initResultsListener();
+    initSaveButton();
+
+    // Attach infinite scroll once
+    window.addEventListener("scroll", handlePageScroll);
+  });
 </script>
+
 </body>
 </html>
