@@ -182,8 +182,6 @@ def create_app():
             })
 
             # ICD IDs starting with icdcode_id_XXXXX
-            # Save each ICD code in its own document
-            # ICD IDs starting with icdcode_id_XXXXX
             icd_id = "icdcode_id_" + uuid.uuid4().hex[:8]
 
             icd_doc_ref = note_ref.collection("ICDCode").document(icd_id)
@@ -270,6 +268,7 @@ def create_app():
         return jsonify(list(unique.values())[:30])
 
 
+    
     # ---------------------------------------------------------
     # PROFILE
     # ---------------------------------------------------------
@@ -304,7 +303,7 @@ def create_app():
 
                 # Username validation
                 if not re.fullmatch(r"^[A-Za-z][A-Za-z0-9._-]{2,31}$", new_username):
-                    flash("Username must start with a letter and can only contain letters, numbers, dots (.), underscores (_) or hyphens (-). Length must be between 3–32 characters.", "error")
+                    flash("Username must start with a letter and be 3–32 characters.", "error")
                     return redirect(url_for("profile"))
 
                 # If username DID NOT change → just update fields
@@ -341,7 +340,34 @@ def create_app():
                 session['user_name'] = new_name
                 session['user_email'] = new_email
 
-                flash("Profile updated successfully!", "success")
+                # -----------------------------------------
+                # UPDATE CreatedBy & AdjustedBy references
+                # -----------------------------------------
+                old_doctor_id = old_id
+                new_doctor_id = new_username
+
+                # 1️⃣ Update Patients.CreatedBy
+                patients = db.collection("Patients").where("CreatedBy", "==", old_doctor_id).stream()
+                for p in patients:
+                    p.reference.update({"CreatedBy": new_doctor_id})
+
+                # 2️⃣ Update MedicalNotes.CreatedBy
+                patients_all = db.collection("Patients").stream()
+                for p in patients_all:
+                    notes = p.reference.collection("MedicalNotes").where("CreatedBy", "==", old_doctor_id).stream()
+                    for n in notes:
+                        n.reference.update({"CreatedBy": new_doctor_id})
+
+                # 3️⃣ Update ICDCode.AdjustedBy
+                patients_all = db.collection("Patients").stream()
+                for p in patients_all:
+                    notes = p.reference.collection("MedicalNotes").stream()
+                    for n in notes:
+                        icds = n.reference.collection("ICDCode").where("AdjustedBy", "==", old_doctor_id).stream()
+                        for icd in icds:
+                            icd.reference.update({"AdjustedBy": new_doctor_id})
+
+                flash("Profile + all related records updated successfully!", "success")
                 return redirect(url_for("profile"))
 
             except Exception as e:
@@ -349,6 +375,7 @@ def create_app():
                 return redirect(url_for("profile"))
 
         return render_template("profile.html", user=current_user)
+
 
 
     # ---------------------------------------------------------
