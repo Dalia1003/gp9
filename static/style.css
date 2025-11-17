@@ -31,69 +31,23 @@ a:hover {
 }
 
 
-/* Full-width header */
-header.header {
-  width: 100%;
-  max-width: 100%;
-  padding-inline: clamp(16px, 6vw, 80px);
-  padding-block: 15px;
-  box-sizing: border-box;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background: rgba(255, 255, 255, 0.15);
-  backdrop-filter: blur(10px);
-  position: sticky;
-  top: 0;
-  z-index: 100;
+header {
+    display: flex;
+    justify-content: space-between; /* left logo, right links+profile */
+    align-items: center;
+    padding: 15px 50px;
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(10px);
+    position: sticky;
+    top: 0;
+    z-index: 100;
 }
 
-body.auth-page-body {
-  margin: 0;
-  padding: 0;
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 20px; /* space between profile and links */
 }
-
-header.header {
-  width: 100%;
-  box-sizing: border-box;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background-color: rgba(255, 255, 255, 0.15);
-  backdrop-filter: blur(10px);
-  padding: 20px 60px;  /* adjust side spacing */
-  position: sticky;
-  top: 0;
-  z-index: 1000;
-}
-
-.header-left img {
-  height: 50px;
-}
-
-.header-nav {
-  display: flex;
-  gap: 30px;
-}
-
-.header-nav a {
-  text-decoration: none;
-  color: #333;
-  font-weight: 500;
-}
-
-/* Keep nav links aligned with page content */
-.header-nav {
-    margin-left: auto;
-}
-.header-nav a {
-    margin-left: 15px;
-    font-weight: 500;
-    color: #333;
-    font-size: 16px;
-    transition: color 0.3s;
-}
-
 .header-left .logo-img {
     height: 80px;
     width: auto;
@@ -166,22 +120,24 @@ footer {
     margin-top: 50px;
 }
 
-.reset-page-body, .token-page-body {
+.reset-page-body,
+.token-page-body {
+    min-height: 100vh;
+    padding: 20px;
     display: flex;
     justify-content: center;
-    align-items: center;
-    height: 100vh;
-    margin: 0;
+    align-items: flex-start;  /* instead of center */
 }
 
-.reset-container, .token-container {
-    background: rgba(255,255,255,0.2);
-    padding: 40px;
-    border-radius: 20px;
-    text-align: center;
-    box-shadow: 0 8px 25px rgba(0,0,0,0.1);
+.reset-container,
+.token-container {
     width: 100%;
     max-width: 400px;
+    margin-top: 40px; /* gives space at top */
+    background: rgba(255,255,255,0.20);
+    padding: 32px;
+    border-radius: 20px;
+    backface-visibility: hidden;
 }
 
 .reset-container input, .token-container input {
@@ -711,7 +667,6 @@ body main.auth-container-profile {
   text-align: center;
   font-weight: 500;
   display: none;
-  
 }
 .banner-profile.show {
   display: block;
@@ -1087,118 +1042,29 @@ body main.auth-container-profile {
     font-size: 1.75rem;
   }
 }
-/* ------------------------------------
-   FINAL MOBILE FIXES (LOGIN & SIGNUP)
----------------------------------------*/
+
 @media (max-width: 600px) {
-
-    /* Body padding so content doesn't touch edges */
-    .auth-page-body {
-        padding: 16px;
-        background-size: cover;
-        display: block; /* override grid */
-    }
-
-    /* Fix header for phones */
-   header.header {
-    flex-direction: row !important;
-    justify-content: space-between !important;
-    align-items: center !important;
-    padding: 12px 20px !important;
-}
-
-
-    .header-left img {
-        height: 55px !important;
-    }
-
-     .header-nav {
-        flex-direction: row !important;
-        gap: 18px !important;
-        margin-left: auto !important;  /* push nav to the right */
-    }
-
-    /* Login/Signup container */
-    .auth-container {
-        width: 100% !important;
-        max-width: 100% !important;
-        margin: 20px auto;
-        padding: 24px 20px;
-        border-radius: 16px;
-    }
-
-    .auth-title {
-        font-size: 22px !important;
-    }
-
-    .auth-subtitle {
-        font-size: 13px !important;
-    }
-
-    /* Form adjustments */
-    .auth-form {
-        width: 100% !important;
-        gap: 10px;
-    }
-
-    .auth-form label {
-        font-size: 14px;
-    }
-
-    .auth-form input {
-        width: 100% !important;
-        padding: 12px !important;
-        font-size: 15px !important;
-        border-radius: 10px !important;
-    }
-
-    /* Buttons */
-    .btn {
-        width: 100% !important;
-        padding: 12px !important;
-        font-size: 16px !important;
-        border-radius: 10px !important;
-    }
-
-    /* Text under form */
-    .auth-meta {
-        font-size: 13px !important;
-    }
-
-    /* Password checklist */
-    .pw-checklist {
-        font-size: 13px !important;
-        padding-left: 10px;
-    }
-    .hero {
-    padding: 60px 16px 40px;
+  .hero {
+    padding: 60px 20px 40px;
   }
-
   .hero h2 {
-    font-size: 28px;
+    font-size: 32px;
   }
-
   .hero p {
     font-size: 16px;
   }
-
-  .hero .quote {
-    font-size: 18px;
-  }
-
-  section.att {
-    width: 92%;
-    margin: 24px auto;
-    padding: 20px 18px;
-  }
+  .quote { font-size: 18px; }
+  .quote2 { font-size: 14px; }
+}
+footer {
+  padding: 20px 0;
+  text-align: center;
+  font-size: 14px;
 }
 
-input:focus {
-    outline: none !important;
-}
-
-html, body {
-    width: 100%;
-    max-width: 100%;
-    overflow-x: hidden;
+@media (max-width: 600px) {
+  footer {
+    font-size: 13px;
+    padding: 16px 0;
+  }
 }
