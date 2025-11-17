@@ -1149,9 +1149,21 @@ input:focus {
 @media (max-width: 480px) {
     .reset-container, 
     .token-container {
-        max-width: 90% !important;  
-        padding: 45px 25px !important;
-        border-radius: 16px !important;
-        transform: scale(1.15);   /* Make it bigger */
+         max-width: 95% !important;
+        padding: 55px 28px !important;
+        border-radius: 20px !important;
     }
+}
+/* Fix iPhone notch white gap on login & signup */
+.auth-page-body {
+    min-height: 100svh !important;
+    height: 100svh !important;
+    padding-top: env(safe-area-inset-top) !important;
+}
+/* Fix reset & token pages height on iPhone */
+.reset-page-body,
+.token-page-body {
+    min-height: 100svh !important;
+    height: 100svh !important;
+    padding-top: env(safe-area-inset-top) !important;
 }
