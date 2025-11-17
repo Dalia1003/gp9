@@ -7,6 +7,7 @@ body {
     min-height: 100vh;          /* make body fill full height */
     display: flex;
     flex-direction: column;
+    height: 100%;
 }
 
 a {
@@ -1064,10 +1065,15 @@ body main.auth-container-profile {
 @media (max-width: 600px) {
 
     /* Body padding so content doesn't touch edges */
-    .auth-page-body {
-        padding: 16px;
-        background-size: cover;
-    }
+ body,
+.auth-page-body,
+.reset-page-body,
+.token-page-body {
+    min-height: 100dvh !important;
+    height: 100dvh !important;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+}
 
     /* Fix header for phones */
    header.header {
@@ -1086,15 +1092,6 @@ body main.auth-container-profile {
         flex-direction: row !important;
         gap: 18px !important;
         margin-left: auto !important;  /* push nav to the right */
-    }
-
-    /* Login/Signup container */
-    .auth-container {
-        width: 100% !important;
-        max-width: 100% !important;
-        margin: 20px auto;
-        padding: 24px 20px;
-        border-radius: 16px;
     }
 
     .auth-title {
@@ -1146,24 +1143,16 @@ input:focus {
     outline: none !important;
 }
 
-@media (max-width: 480px) {
-    .reset-container, 
-    .token-container {
-         max-width: 95% !important;
-        padding: 55px 28px !important;
+@media (max-width: 600px) {
+.auth-container,
+    .reset-container {
+        width: 90% !important;
+        max-width: 450px !important;
+        margin: 40px auto !important;
+        padding: 30px 22px !important;
         border-radius: 20px !important;
     }
 }
 /* Fix iPhone notch white gap on login & signup */
-.auth-page-body {
-    min-height: 100svh !important;
-    height: 100svh !important;
-    padding-top: env(safe-area-inset-top) !important;
-}
 /* Fix reset & token pages height on iPhone */
-.reset-page-body,
-.token-page-body {
-    min-height: 100svh !important;
-    height: 100svh !important;
-    padding-top: env(safe-area-inset-top) !important;
-}
+
