@@ -1091,4 +1091,49 @@ footer {
     padding: 16px 0;
   }
 }
+header {
+    padding: 20px 50px !important;
+    height: auto;
+}
+.header-left .logo-img {
+    height: 80px !important;
+}
+
+/* 2️⃣ — Make login & reset pages centered and normal size */
+.auth-page-body,
+.reset-page-body,
+.token-page-body {
+    min-height: 100vh;
+    display: flex !important;
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: center;
+    padding-top: 60px;
+}
+
+/* 3️⃣ — Fix the tiny reset/login boxes */
+.reset-container,
+.token-container,
+.auth-container {
+    width: 100%;
+    max-width: 550px !important;   /* was 400 → TOO SMALL */
+    margin-top: 20px;
+    padding: 40px 32px !important;
+    border-radius: 20px;
+}
+
+/* 4️⃣ — Fix about/vision being squeezed in the middle */
+section.att {
+    width: min(90%, 1100px) !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+}
+
+/* 5️⃣ — Footer full width everywhere */
+footer {
+    width: 100%;
+    text-align: center;
+    padding: 20px 0 !important;
+}
+
 
