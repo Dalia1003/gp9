@@ -28,10 +28,15 @@ def create_app():
 
     from routes.Authentication import auth_bp, cleanup_unconfirmed_users_background
 
-    threading.Thread(
-        target=cleanup_unconfirmed_users_background,
-        daemon=True
-    ).start()
+    # Detect if running on Render
+    IS_RENDER = os.environ.get("RENDER") == "true"
+    
+    # Only run the cleanup thread on local machine
+    if not IS_RENDER:
+        threading.Thread(
+            target=cleanup_unconfirmed_users_background,
+            daemon=True
+        ).start()
 
 
     # Register blueprints
@@ -406,3 +411,4 @@ def create_app():
 if __name__ == "__main__":
     app = create_app()
     app.run(debug=True)
+
