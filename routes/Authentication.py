@@ -15,6 +15,7 @@ import traceback
 import threading
 import time
 from google.cloud.firestore_v1 import FieldFilter
+__all__ = ["auth_bp", "cleanup_unconfirmed_users_background"]
 
 
 # ---------------------------------------------------------
@@ -22,6 +23,42 @@ from google.cloud.firestore_v1 import FieldFilter
 # ---------------------------------------------------------
 auth_bp = Blueprint("Authentication", __name__)
 
+def cleanup_unconfirmed_users_background():
+    while True:
+        try:
+            print("🧹 Running auto-cleanup for unconfirmed users...")
+
+            now = datetime.now(timezone.utc)
+            one_hour_ago = now - timedelta(hours=1)
+
+            users = db.collection("HealthCareP").where(
+                filter=FieldFilter("email_confirmed", "==", 0)
+            ).stream()
+
+            for u in users:
+                data = u.to_dict()
+                created_at = data.get("created_at")
+
+                if not created_at:
+                    continue
+
+                # Convert Firestore timestamp to datetime safely
+                if hasattr(created_at, "to_datetime"):
+                    created_at = created_at.to_datetime()
+                elif hasattr(created_at, "datetime"):
+                    created_at = created_at.datetime
+                else:
+                    continue
+
+
+                if created_at < one_hour_ago:
+                    db.collection("HealthCareP").document(u.id).delete()
+                    print(f"🗑️ Deleted unconfirmed: {u.id}")
+
+        except Exception as e:
+            print("⚠️ Cleanup error:", e)
+
+        time.sleep(3600)  # Run every hour
 
 # ---------------------------------------------------------
 #  Serializer for secure tokens
@@ -75,42 +112,6 @@ def send_email_async(to, subject, html, text=None):
     t = threading.Thread(target=lambda: send_brevo_email(to, subject, html, text))
     t.daemon = True
     t.start()
-
-
-# ---------------------------------------------------------
-#  AUTO CLEANUP OF OLD UNCONFIRMED ACCOUNTS
-# --------------------------------------------------------
-def cleanup_unconfirmed_users_background():
-    while True:
-        try:
-            print("🧹 Running auto-cleanup for unconfirmed users...")
-            now = datetime.now(timezone.utc)
-            one_hour_ago = now - timedelta(hours=1)
-
-            users = db.collection("HealthCareP").where(
-                filter=FieldFilter("email_confirmed", "==", 0)
-            ).stream()
-
-            for u in users:
-                data = u.to_dict()
-                created_at = data.get("created_at")
-
-                if not created_at:
-                    continue
-
-                # Firestore timestamp → Python datetime
-                if hasattr(created_at, "to_datetime"):
-                    created_at = created_at.to_datetime()
-
-                if created_at < one_hour_ago:
-                    db.collection("HealthCareP").document(u.id).delete()
-                    print(f"🗑️ Deleted unconfirmed: {u.id}")
-
-        except Exception as e:
-            print("⚠️ Cleanup error:", e)
-
-        time.sleep(3600)  # wait 1 hour
-  
 
 # ---------------------------------------------------------
 #  LOGIN
