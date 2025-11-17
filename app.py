@@ -26,7 +26,7 @@ def create_app():
     app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "fallback-secret-key")
     app.config["PROPAGATE_EXCEPTIONS"] = True
 
-    from routes.Authentication import cleanup_unconfirmed_users_background
+    from routes.Authentication import auth_bp, cleanup_unconfirmed_users_background
 
     threading.Thread(
         target=cleanup_unconfirmed_users_background,
