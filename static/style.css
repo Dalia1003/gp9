@@ -4,6 +4,9 @@ body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     background: linear-gradient(135deg, #F4F1FB, #E1D4F2);
     color: #2d004d;
+    min-height: 100vh;          /* make body fill full height */
+    display: flex;
+    flex-direction: column;
 }
 
 a {
@@ -31,23 +34,44 @@ a:hover {
 }
 
 
-header {
-    display: flex;
-    justify-content: space-between; /* left logo, right links+profile */
-    align-items: center;
-    padding: 15px 50px;
-    background: rgba(255, 255, 255, 0.15);
-    backdrop-filter: blur(10px);
-    position: sticky;
-    top: 0;
-    z-index: 100;
+/* Full-width header */
+header.header {
+  width: 100%;
+  max-width: 100%;
+  padding-inline: clamp(16px, 6vw, 80px);
+  padding-block: 15px;
+  box-sizing: border-box;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(10px);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+body.auth-page-body {
+  margin: 0;
+  padding: 0;
+}
+/* home page */
+.header-nav {
+  display: flex;
+  gap: 30px;
+  margin-left: auto;
 }
 
-.header-right {
-    display: flex;
-    align-items: center;
-    gap: 20px; /* space between profile and links */
+.header-nav a {
+  text-decoration: none;
+  color: #333;
+  font-weight: 500;
+  margin-left: 15px;
+  font-weight: 500;
+  color: #333;
+  font-size: 16px;
+  transition: color 0.3s;
 }
+
 .header-left .logo-img {
     height: 80px;
     width: auto;
@@ -117,60 +141,43 @@ footer {
     padding: 20px;
     background: rgba(255, 255, 255, 0.15);
     color: white;
-    margin-top: 50px;
+    margin-top: auto;
 }
-
-.reset-page-body,
-.token-page-body {
+/* reset */
+/* RESET + TOKEN PAGE */
+.reset-page-body, .token-page-body {
     min-height: 100vh;
-    padding: 20px;
     display: flex;
     justify-content: center;
     align-items: center;
+    background: linear-gradient(135deg, #F4F1FB, #E1D4F2);
+    padding: 20px;
 }
 
-/* ===== FIX HEADER ON AUTH PAGES (login + signup + reset) ===== */
-.auth-page-body header,
-.reset-page-body header,
-.token-page-body header {
-    width: 100%;
-    padding: 20px 32px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    background: rgba(255, 255, 255, 0.15);
-    backdrop-filter: blur(10px);
-    position: sticky;
-    top: 0;
-    z-index: 100;
-}
-
-/* Logo on auth pages */
-.auth-page-body header .logo-img,
-.reset-page-body header .logo-img,
-.token-page-body header .logo-img {
-    height: 70px;
-}
-
-.reset-container,
-.token-container {
-    width: 100%;
-    max-width: 400px;
-    margin-top: 40px; /* gives space at top */
-    background: rgba(255,255,255,0.20);
-    padding: 32px;
+/* Bigger card */
+.reset-container, .token-container {
+    background: rgba(255,255,255,0.25);
+    padding: 50px 40px;
     border-radius: 20px;
-    backface-visibility: hidden;
-}
-
-.reset-container input, .token-container input {
+    text-align: center;
+    box-shadow: 0 8px 25px rgba(0,0,0,0.1);
     width: 100%;
-    padding: 12px;
-    margin: 10px 0;
-    border-radius: 8px;
-    border: none;
+    max-width: 540px;   /* ← SAME SIZE AS LOGIN/SIGNUP */
 }
 
+/* Input fields */
+.reset-container input,
+.token-container input {
+    width: 100%;
+    padding: 14px;
+    margin: 12px 0;
+    border-radius: 10px;
+    border: none;
+    background: white;
+    font-size: 16px;
+}
+
+/* login */
 .auth-page-body {
     margin: 0;
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -182,7 +189,7 @@ footer {
   }
 
   .auth-container {
-    max-width: 420px;
+    max-width: 540px;
     margin: 60px auto;
     padding: 40px 32px;
     background: rgba(255, 255, 255, 0.20);
@@ -190,6 +197,10 @@ footer {
     border-radius: 20px;
     box-shadow: 0 8px 25px rgba(0,0,0,0.08);
     text-align: left;
+    justify-self: center;
+    width: 100%;
+    margin: 40px 0;         /* vertical spacing */
+    padding: 40px 32px;
   }
 
   .auth-title {
@@ -268,23 +279,12 @@ footer {
     }
   }
   
-/* Center the form card inside the grid page */
-.auth-container {
-    justify-self: center;   /* <-- fixes the “hugging left edge” issue */
-    max-width: 540px;
-    width: 100%;
-    margin: 40px 0;         /* vertical spacing */
-    padding: 40px 32px;
-  }
-  
   /* Comfortable left/right gutters across the page */
   .auth-page-body { 
     padding-inline: clamp(16px, 6vw, 80px);
   }
   
-  header, footer {
-    padding-inline: clamp(16px, 6vw, 80px);
-  }
+
   
   /* (Good practice) Ensure padding doesn't blow widths */
   *, *::before, *::after { box-sizing: border-box; }
@@ -373,7 +373,7 @@ footer {
   width: 100%;             /* prevent shrink */
 }
 
-/* Keep your content width consistent */
+/* profile */
 .form-page .container {
   max-width: 900px;
   width: min(900px, 92%);  /* same feel on small screens */
@@ -450,11 +450,6 @@ footer {
     }
 
     /* === Keep footer at bottom & center dashboard content === */
-    body {
-      min-height: 100vh;          /* make body fill full height */
-      display: flex;
-      flex-direction: column;
-    }
     
     main.dashboard {
       flex: 1;                    /* let main take up leftover space */
@@ -464,10 +459,7 @@ footer {
       align-items: center;        /* horizontally center */
       text-align: center;
     }
-    
-    footer {
-      margin-top: auto;           /* pushes footer to bottom */
-    }
+  
 /* === Align fields on the Medical Note page only === */
 @media (min-width:700px){
   .form-page .row{
@@ -690,6 +682,7 @@ body main.auth-container-profile {
   text-align: center;
   font-weight: 500;
   display: none;
+  
 }
 .banner-profile.show {
   display: block;
@@ -1065,75 +1058,92 @@ body main.auth-container-profile {
     font-size: 1.75rem;
   }
 }
-
+/* ------------------------------------
+   FINAL MOBILE FIXES (LOGIN & SIGNUP)
+---------------------------------------*/
 @media (max-width: 600px) {
-  .hero {
-    padding: 60px 20px 40px;
-  }
-  .hero h2 {
-    font-size: 32px;
-  }
-  .hero p {
-    font-size: 16px;
-  }
-  .quote { font-size: 18px; }
-  .quote2 { font-size: 14px; }
-}
-footer {
-  padding: 20px 0;
-  text-align: center;
-  font-size: 14px;
+
+    /* Body padding so content doesn't touch edges */
+    .auth-page-body {
+        padding: 16px;
+        background-size: cover;
+        display: block; /* override grid */
+    }
+
+    /* Fix header for phones */
+   header.header {
+    flex-direction: row !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    padding: 12px 20px !important;
 }
 
-@media (max-width: 600px) {
-  footer {
-    font-size: 13px;
-    padding: 16px 0;
-  }
-}
-header {
-    padding: 20px 50px !important;
-    height: auto;
-}
-.header-left .logo-img {
-    height: 80px !important;
+
+    .header-left img {
+        height: 55px !important;
+    }
+
+     .header-nav {
+        flex-direction: row !important;
+        gap: 18px !important;
+        margin-left: auto !important;  /* push nav to the right */
+    }
+
+    /* Login/Signup container */
+    .auth-container {
+        width: 100% !important;
+        max-width: 100% !important;
+        margin: 20px auto;
+        padding: 24px 20px;
+        border-radius: 16px;
+    }
+
+    .auth-title {
+        font-size: 22px !important;
+    }
+
+    .auth-subtitle {
+        font-size: 13px !important;
+    }
+
+    /* Form adjustments */
+    .auth-form {
+        width: 100% !important;
+        gap: 10px;
+    }
+
+    .auth-form label {
+        font-size: 14px;
+    }
+
+    .auth-form input {
+        width: 100% !important;
+        padding: 12px !important;
+        font-size: 15px !important;
+        border-radius: 10px !important;
+    }
+
+    /* Buttons */
+    .btn {
+        width: 100% !important;
+        padding: 12px !important;
+        font-size: 16px !important;
+        border-radius: 10px !important;
+    }
+
+    /* Text under form */
+    .auth-meta {
+        font-size: 13px !important;
+    }
+
+    /* Password checklist */
+    .pw-checklist {
+        font-size: 13px !important;
+        padding-left: 10px;
+    }
 }
 
-/* 2️⃣ — Make login & reset pages centered and normal size */
-.auth-page-body,
-.reset-page-body,
-.token-page-body {
-    min-height: 100vh;
-    display: flex !important;
-    flex-direction: column;
-    justify-content: flex-start;
-    align-items: center;
-    padding-top: 60px;
+input:focus {
+    outline: none !important;
 }
-
-/* 3️⃣ — Fix the tiny reset/login boxes */
-.reset-container,
-.token-container,
-.auth-container {
-    width: 100%;
-    max-width: 550px !important;   /* was 400 → TOO SMALL */
-    margin-top: 20px;
-    padding: 40px 32px !important;
-    border-radius: 20px;
-}
-
-/* 4️⃣ — Fix about/vision being squeezed in the middle */
-section.att {
-    width: min(90%, 1100px) !important;
-    margin-left: auto !important;
-    margin-right: auto !important;
-}
-
-/* 5️⃣ — Footer full width everywhere */
-footer {
-    width: 100%;
-    text-align: center;
-    padding: 20px 0 !important;
-}
-
 
