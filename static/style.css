@@ -126,7 +126,30 @@ footer {
     padding: 20px;
     display: flex;
     justify-content: center;
-    align-items: flex-start;  /* instead of center */
+    align-items: center;
+}
+
+/* ===== FIX HEADER ON AUTH PAGES (login + signup + reset) ===== */
+.auth-page-body header,
+.reset-page-body header,
+.token-page-body header {
+    width: 100%;
+    padding: 20px 32px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(10px);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+}
+
+/* Logo on auth pages */
+.auth-page-body header .logo-img,
+.reset-page-body header .logo-img,
+.token-page-body header .logo-img {
+    height: 70px;
 }
 
 .reset-container,
@@ -1068,3 +1091,4 @@ footer {
     padding: 16px 0;
   }
 }
+
