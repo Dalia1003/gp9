@@ -14,6 +14,8 @@ from flask import Flask, render_template, jsonify, request, session, redirect, u
 from firebase.Initialization import db
 from datetime import datetime, date
 import os, json, re, uuid
+import threading
+
 
 
 # ---------------------------------------------------------
@@ -23,6 +25,14 @@ def create_app():
     app = Flask(__name__)
     app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "fallback-secret-key")
     app.config["PROPAGATE_EXCEPTIONS"] = True
+
+    from routes.Authentication import cleanup_unconfirmed_users_background
+
+    threading.Thread(
+        target=cleanup_unconfirmed_users_background,
+        daemon=True
+    ).start()
+
 
     # Register blueprints
     from routes.Authentication import auth_bp
