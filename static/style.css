@@ -1067,7 +1067,6 @@ body main.auth-container-profile {
     .auth-page-body {
         padding: 16px;
         background-size: cover;
-        display: block; /* override grid */
     }
 
     /* Fix header for phones */
@@ -1147,3 +1146,12 @@ input:focus {
     outline: none !important;
 }
 
+@media (max-width: 480px) {
+    .reset-container, 
+    .token-container {
+        max-width: 90% !important;  
+        padding: 45px 25px !important;
+        border-radius: 16px !important;
+        transform: scale(1.15);   /* Make it bigger */
+    }
+}
