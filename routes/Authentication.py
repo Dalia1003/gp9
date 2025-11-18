@@ -221,7 +221,7 @@ def signup():
             "Password": hashed_pw,
             "Name": f"{first} {last}",
             "email_confirmed": 0,
-            "created_at": firestore.SERVER_TIMESTAMP   # <-- needed for cleanup
+            "created_at": datetime.now(timezone.utc)
         })
 
         # Send confirmation
