@@ -48,10 +48,6 @@ header.header {
   top: 0;
   z-index: 100;
 }
-body.auth-page-body {
-  margin: 0;
-  padding: 0;
-}
 /* home page */
 .header-nav {
   display: flex;
@@ -176,30 +172,20 @@ footer {
 }
 
 /* login */
-.auth-page-body {
-    margin: 0;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background: linear-gradient(135deg, #F4F1FB, #E1D4F2);
-    color: #2d004d;
-    min-height: 100vh;
-    display: grid;
-    grid-template-rows: auto 1fr auto;
-  }
+
 
   .auth-container {
     max-width: 540px;
-    margin: 60px auto;
+    width: 100%;
+    margin: 40px auto;        /* centered + only top/bottom 40px (consistent) */
     padding: 40px 32px;
     background: rgba(255, 255, 255, 0.20);
     backdrop-filter: blur(10px);
     border-radius: 20px;
     box-shadow: 0 8px 25px rgba(0,0,0,0.08);
     text-align: left;
-    justify-self: center;
-    width: 100%;
-    margin: 40px 0;         /* vertical spacing */
-    padding: 40px 32px;
-  }
+}
+
 
   .auth-title {
     margin: 0 0 6px 0;
@@ -276,14 +262,7 @@ footer {
       grid-template-columns: 1fr 1fr;
     }
   }
-  
-  /* Comfortable left/right gutters across the page */
-  .auth-page-body { 
-    padding-inline: clamp(16px, 6vw, 80px);
-  }
-  
 
-  
   /* (Good practice) Ensure padding doesn't blow widths */
   *, *::before, *::after { box-sizing: border-box; }
 
@@ -743,39 +722,6 @@ body main.auth-container-profile {
   }
 }
 
-
-  .profile-header img {
-    width: 80px;
-    height: 80px;
-  }
-
-  .profile-header h2 {
-    font-size: 18px;
-  }
-
-  .edit-btn-profile {
-    top: 5px;
-    right: 5px;
-    font-size: 18px;
-  }
-
-  .profile-info input {
-    font-size: 14px;
-    padding: 8px;
-  }
-
-  .btn-profile {
-    font-size: 14px;
-    padding: 8px 14px;
-  }
-
-  .banner-profile {
-    width: 90%;
-    font-size: 14px;
-    padding: 10px;
-  }
-
-
 /* ===== OuwN Breadcrumb Bar — Purple, Wide, Soft Shadow ===== */
 .ouwn-breadcrumb-bar {
  background: #a98cd8;                        /* purple background */
@@ -1060,17 +1006,7 @@ body main.auth-container-profile {
    FINAL MOBILE FIXES (LOGIN & SIGNUP)
 ---------------------------------------*/
 @media (max-width: 600px) {
-
-    /* Body padding so content doesn't touch edges */
  
-.auth-page-body,
-.reset-page-body,
-.token-page-body {
-    min-height: 100dvh !important;
-    height: 100dvh !important;
-    padding-top: env(safe-area-inset-top);
-    padding-bottom: env(safe-area-inset-bottom);
-}
 
     /* Fix header for phones */
    header.header {
@@ -1140,13 +1076,3 @@ input:focus {
     outline: none !important;
 }
 
-@media (max-width: 600px) {
-.auth-container,
-    .reset-container {
-        width: 90% !important;
-        max-width: 450px !important;
-        margin: 40px auto !important;
-        padding: 30px 22px !important;
-        border-radius: 20px !important;
-    }
-}
