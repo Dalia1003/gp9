@@ -92,15 +92,9 @@ def reset_request():
             return render_template("reset_password.html", message="No account found with this email.")
 
         user_doc = users[0].to_dict()
+        
 
-        #  2. Check if the account is confirmed
-        if user_doc.get("email_confirmed", 0) != 1:
-            return render_template(
-                "reset_password.html",
-                message="This account has not been confirmed. Please verify your email first."
-            )
-
-        #  3. Create password reset token
+        #  2. Create password reset token
         s = get_serializer()
         token = s.dumps({"email": email}, salt="password-reset")
         reset_link = url_for("auth_reset.reset_password", token=token, _external=True)
