@@ -25,6 +25,7 @@ def create_app():
     app = Flask(__name__)
     app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "fallback-secret-key")
     app.config["PROPAGATE_EXCEPTIONS"] = True
+    app.config["SERVER_NAME"] = "ouwn.onrender.com"
 
 
     # Register blueprints
@@ -398,3 +399,4 @@ def create_app():
 if __name__ == "__main__":
     app = create_app()
     app.run(debug=True)
+
