@@ -1062,7 +1062,7 @@ body main.auth-container-profile {
 @media (max-width: 600px) {
 
     /* Body padding so content doesn't touch edges */
- body,
+ 
 .auth-page-body,
 .reset-page-body,
 .token-page-body {
@@ -1150,5 +1150,3 @@ input:focus {
         border-radius: 20px !important;
     }
 }
-
-
