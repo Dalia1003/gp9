@@ -5,63 +5,21 @@ from flask import (
 from werkzeug.security import generate_password_hash, check_password_hash
 from firebase.Initialization import db
 from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
-from google.cloud import firestore
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 import re
 import os
-import threading
 import requests
-import traceback
 import threading
-import time
-from google.cloud.firestore_v1 import FieldFilter
-__all__ = ["auth_bp", "cleanup_unconfirmed_users_background"]
 
 
 # ---------------------------------------------------------
-#  Blueprint Setup
+#  Blueprint
 # ---------------------------------------------------------
 auth_bp = Blueprint("Authentication", __name__)
 
-def cleanup_unconfirmed_users_background():
-    while True:
-        try:
-            print("🧹 Running auto-cleanup for unconfirmed users...")
-
-            now = datetime.now(timezone.utc)
-            one_hour_ago = now - timedelta(hours=1)
-
-            users = db.collection("HealthCareP").where(
-                filter=FieldFilter("email_confirmed", "==", 0)
-            ).stream()
-
-            for u in users:
-                data = u.to_dict()
-                created_at = data.get("created_at")
-
-                if not created_at:
-                    continue
-
-                # Convert Firestore timestamp to datetime safely
-                if hasattr(created_at, "to_datetime"):
-                    created_at = created_at.to_datetime()
-                elif hasattr(created_at, "datetime"):
-                    created_at = created_at.datetime
-                else:
-                    continue
-
-
-                if created_at < one_hour_ago:
-                    db.collection("HealthCareP").document(u.id).delete()
-                    print(f"🗑️ Deleted unconfirmed: {u.id}")
-
-        except Exception as e:
-            print("⚠️ Cleanup error:", e)
-
-        time.sleep(3600)  # Run every hour
 
 # ---------------------------------------------------------
-#  Serializer for secure tokens
+#  Serializer for tokens
 # ---------------------------------------------------------
 def get_serializer():
     secret = current_app.config["SECRET_KEY"]
@@ -78,7 +36,6 @@ BREVO_ENDPOINT = "https://api.brevo.com/v3/smtp/email"
 
 
 def send_brevo_email(to_email: str, subject: str, html: str, text: str = None):
-    """Send email using Brevo REST API."""
     if not BREVO_API_KEY:
         print("❌ BREVO_API_KEY missing!")
         return
@@ -89,7 +46,6 @@ def send_brevo_email(to_email: str, subject: str, html: str, text: str = None):
         "subject": subject,
         "htmlContent": html,
     }
-
     if text:
         payload["textContent"] = text
 
@@ -112,6 +68,7 @@ def send_email_async(to, subject, html, text=None):
     t = threading.Thread(target=lambda: send_brevo_email(to, subject, html, text))
     t.daemon = True
     t.start()
+
 
 # ---------------------------------------------------------
 #  LOGIN
@@ -138,10 +95,6 @@ def login():
             user_doc = q[0]
             user = user_doc.to_dict()
 
-            if not user.get("email_confirmed", 0):
-                flash("⚠️ Please confirm your email first.", "error")
-                return render_template("login.html", entered_username=username)
-
             if not check_password_hash(user["Password"], password):
                 flash("Invalid username or password.", "error")
                 return render_template("login.html", entered_username=username)
@@ -152,9 +105,7 @@ def login():
 
             return redirect(url_for("dashboard"))
 
-        except Exception as e:
-            print("❌ LOGIN ERROR:", e)
-            traceback.print_exc()
+        except Exception:
             flash("Login failed. Try again.", "error")
 
     return render_template("login.html", entered_username=entered_username)
@@ -165,7 +116,6 @@ def login():
 # ---------------------------------------------------------
 @auth_bp.route("/signup", methods=["GET", "POST"])
 def signup():
-
     entered = {"first_name": "", "last_name": "", "username": "", "email": ""}
 
     if request.method == "POST":
@@ -188,23 +138,20 @@ def signup():
             return render_template("signup.html", entered=entered)
 
         # Username validation
-        username_regex = r"^[A-Za-z][A-Za-z0-9._-]{2,31}$"
-        if not re.fullmatch(username_regex, username):
+        if not re.fullmatch(r"^[A-Za-z][A-Za-z0-9._-]{2,31}$", username):
             flash("Username must start with a letter and be 3–32 characters.", "error")
             return render_template("signup.html", entered=entered)
 
         # Password checks
-        if (
-            len(password) < 8
-            or not any(c.isupper() for c in password)
-            or not any(c.islower() for c in password)
-            or not any(c.isdigit() for c in password)
-            or not any(not c.isalnum() for c in password)
-        ):
+        if (len(password) < 8 or
+            not any(c.isupper() for c in password) or
+            not any(c.islower() for c in password) or
+            not any(c.isdigit() for c in password) or
+            not any(not c.isalnum() for c in password)):
             flash("Password must include uppercase, lowercase, number, and special character.", "error")
             return render_template("signup.html", entered=entered)
 
-        # Duplicates
+        # Duplicate check
         if db.collection("HealthCareP").document(username).get().exists:
             flash("Username already exists.", "error")
             return render_template("signup.html", entered=entered)
@@ -213,60 +160,43 @@ def signup():
             flash("Email already exists.", "error")
             return render_template("signup.html", entered=entered)
 
-        # Create user
+        # Hash password
         hashed_pw = generate_password_hash(password)
-        db.collection("HealthCareP").document(username).set({
-            "UserID": username,
-            "Email": email,
-            "Password": hashed_pw,
-            "Name": f"{first} {last}",
-            "email_confirmed": 0,
-            "created_at": datetime.now(timezone.utc)
-        })
 
-        # Send confirmation
-        try:
-            s = get_serializer()
-            token = s.dumps({"username": username, "email": email}, salt="email-confirm")
-            link = url_for("Authentication.confirm_email", token=token, _external=True)
+        # Create token containing full user data (NO saving yet)
+        s = get_serializer()
+        token = s.dumps({
+            "first": first,
+            "last": last,
+            "username": username,
+            "email": email,
+            "password": hashed_pw
+        }, salt="email-confirm")
 
-            subject = "Confirm Your Email - OuwN"
+        link = url_for("Authentication.confirm_email", token=token, _external=True)
+        subject = "Confirm Your Email - OuwN"
 
-            html = f"""
-            <html>
-            <body style="font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                        color:#2d004d; background:#f4eefc; padding:20px;">
-                        
-                <div style="max-width:600px; margin:auto; background:#fff; border-radius:10px;
-                            padding:30px; box-shadow:0 5px 15px rgba(0,0,0,0.1);">
-
+        # Email template
+        html = f"""
+        <html>
+        <body style="font-family:'Segoe UI', Tahoma; background:#f4eefc; padding:20px;">
+            <div style="max-width:600px; margin:auto; background:#fff; padding:30px; border-radius:10px;">
                 <h2 style="color:#9975C1; text-align:center;">OuwN Email Confirmation</h2>
-
                 <p>Hi {first} {last},</p>
-
-                <p>Welcome! Please confirm your email address by clicking the button below:</p>
-
+                <p>Please confirm your email by clicking below:</p>
                 <div style="text-align:center; margin:30px 0;">
-                    <a href="{link}" 
-                    style="background:#9975C1; color:white; padding:12px 25px;
-                            text-decoration:none; border-radius:25px; font-weight:bold;">
-                    Confirm Email
+                    <a href="{link}"
+                        style="background:#9975C1; color:white; padding:12px 25px; border-radius:25px;">
+                        Confirm Email
                     </a>
                 </div>
+                <p>If you didn't create an account, ignore this email.</p>
+            </div>
+        </body>
+        </html>
+        """
 
-                <p>If you didn't create an account, you can ignore this email.</p>
-
-                <p>Thanks,<br><strong>OuwN Team</strong></p>
-
-                </div>
-            </body>
-            </html>
-            """
-
-            send_email_async(email, subject, html)
-
-        except Exception as e:
-            print("❌ Email send error:", e)
+        send_email_async(email, subject, html)
 
         flash("Account created! Check your email to confirm.", "success")
         return redirect(url_for("Authentication.login"))
@@ -284,35 +214,39 @@ def confirm_email(token):
     try:
         data = s.loads(token, salt="email-confirm", max_age=3600)
     except SignatureExpired:
-        return render_template("confirm.html", msg="⚠️ Link expired. Sign up again.")
+        return render_template("confirm.html", msg="⚠️ Link expired. Please sign up again.")
     except BadSignature:
         return render_template("confirm.html", msg="⚠️ Invalid confirmation link.")
 
-    username = data.get("username")
-    ref = db.collection("HealthCareP").document(username)
+    username = data["username"]
 
-    if not ref.get().exists:
-        return render_template("confirm.html", msg="⚠️ Account not found.")
+    # Duplicate prevention
+    if db.collection("HealthCareP").document(username).get().exists:
+        return render_template("confirm.html", msg="⚠️ Account already confirmed.")
 
-    ref.update({"email_confirmed": 1})
+    # Create the real user now
+    db.collection("HealthCareP").document(username).set({
+        "UserID": username,
+        "Name": f"{data['first']} {data['last']}",
+        "Email": data['email'],
+        "Password": data['password']
+    })
 
-    return render_template("confirm.html", msg="✅ Email confirmed! You may now log in.")
+    return render_template("confirm.html", msg="✅ Email confirmed! You can now log in.")
 
 
 # ---------------------------------------------------------
-#  AJAX Field Validation (Username + Email)
+#  AJAX Validation
 # ---------------------------------------------------------
 @auth_bp.route("/check")
 def check_field():
     field = request.args.get("field")
     value = request.args.get("value", "").strip()
-
     result = {"ok": True, "valid": True, "exists": False}
 
     try:
         if field == "username":
-            regex = r"^[A-Za-z][A-Za-z0-9._-]{2,31}$"
-            result["valid"] = bool(re.fullmatch(regex, value))
+            result["valid"] = bool(re.fullmatch(r"^[A-Za-z][A-Za-z0-9._-]{2,31}$", value))
             if result["valid"]:
                 result["exists"] = db.collection("HealthCareP").document(value).get().exists
 
@@ -320,13 +254,12 @@ def check_field():
             result["valid"] = bool(re.fullmatch(r"^[^@]+@[^@]+\.[A-Za-z]{2,}$", value))
             if result["valid"]:
                 result["exists"] = len(db.collection("HealthCareP")
-                    .where("Email", "==", value)
-                    .limit(1).get()) > 0
+                    .where("Email", "==", value).limit(1).get()) > 0
 
         else:
-            result = {"ok": False}
+            result["ok"] = False
 
     except Exception:
-        result = {"ok": False}
+        result["ok"] = False
 
     return jsonify(result)
