@@ -14,7 +14,7 @@ from flask import Flask, render_template, jsonify, request, session, redirect, u
 from firebase.Initialization import db
 from datetime import datetime, date
 import os, json, re, uuid
-import threading
+
 
 
 
@@ -25,18 +25,6 @@ def create_app():
     app = Flask(__name__)
     app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "fallback-secret-key")
     app.config["PROPAGATE_EXCEPTIONS"] = True
-
-    from routes.Authentication import auth_bp, cleanup_unconfirmed_users_background
-
-    # Detect if running on Render
-    IS_RENDER = os.environ.get("RENDER") == "true"
-    
-    # Only run the cleanup thread on local machine
-    if not IS_RENDER:
-        threading.Thread(
-            target=cleanup_unconfirmed_users_background,
-            daemon=True
-        ).start()
 
 
     # Register blueprints
@@ -343,8 +331,7 @@ def create_app():
                     "Name": new_name,
                     "Email": new_email,
                     "UserID": new_username,
-                    "Password": current_user["Password"],
-                    "email_confirmed": current_user.get("email_confirmed", 1)
+                    "Password": current_user["Password"]
                 })
 
                 # Delete old document
@@ -411,4 +398,3 @@ def create_app():
 if __name__ == "__main__":
     app = create_app()
     app.run(debug=True)
-
