@@ -12,29 +12,24 @@ import requests
 import threading
 
 
-# ---------------------------------------------------------
 #  Blueprint
-# ---------------------------------------------------------
 auth_bp = Blueprint("Authentication", __name__)
 
 
-# ---------------------------------------------------------
 #  Serializer for tokens
-# ---------------------------------------------------------
 def get_serializer():
     secret = current_app.config["SECRET_KEY"]
     return URLSafeTimedSerializer(secret)
 
 
-# ---------------------------------------------------------
+
 #  Brevo Email Setup
-# ---------------------------------------------------------
 BREVO_API_KEY = os.environ.get("BREVO_API_KEY", "")
 BREVO_SENDER_EMAIL = os.environ.get("BREVO_SENDER_EMAIL", "ouwnsystem@gmail.com")
 BREVO_SENDER_NAME = os.environ.get("BREVO_SENDER_NAME", "OuwN System")
 BREVO_ENDPOINT = "https://api.brevo.com/v3/smtp/email"
 
-
+# sending email through brevo API
 def send_brevo_email(to_email: str, subject: str, html: str, text: str = None):
     if not BREVO_API_KEY:
         print("❌ BREVO_API_KEY missing!")
@@ -70,9 +65,8 @@ def send_email_async(to, subject, html, text=None):
     t.start()
 
 
-# ---------------------------------------------------------
+
 #  LOGIN
-# ---------------------------------------------------------
 @auth_bp.route("/login", methods=["GET", "POST"])
 def login():
     entered_username = ""
@@ -82,11 +76,8 @@ def login():
         password = request.form.get("password", "").strip()
         entered_username = username
 
-        if not username or not password:
-            flash("Please enter both username and password.", "error")
-            return render_template("login.html", entered_username=username)
-
         try:
+            # pull user from firestore
             q = db.collection("HealthCareP").where("UserID", "==", username).limit(1).get()
             if not q:
                 flash("Invalid username or password.", "error")
@@ -94,11 +85,13 @@ def login():
 
             user_doc = q[0]
             user = user_doc.to_dict()
-
+           
+            # comparing password hashes
             if not check_password_hash(user["Password"], password):
                 flash("Invalid username or password.", "error")
                 return render_template("login.html", entered_username=username)
 
+            # store user session
             session["user_id"] = user_doc.id
             session["user_name"] = user["Name"]
             session["user_email"] = user["Email"]
@@ -111,11 +104,10 @@ def login():
     return render_template("login.html", entered_username=entered_username)
 
 
-# ---------------------------------------------------------
 #  SIGNUP
-# ---------------------------------------------------------
 @auth_bp.route("/signup", methods=["GET", "POST"])
 def signup():
+    # keep entered fields to refill form if validation fails
     entered = {"first_name": "", "last_name": "", "username": "", "email": ""}
 
     if request.method == "POST":
@@ -126,11 +118,6 @@ def signup():
         password = request.form.get("password", "")
 
         entered = {"first_name": first, "last_name": last, "username": username, "email": email}
-
-        # Required fields
-        if not all([first, last, username, email, password]):
-            flash("All fields are required.", "error")
-            return render_template("signup.html", entered=entered)
 
         # Email validation
         if not re.fullmatch(r"^[^@]+@[^@]+\.[A-Za-z]{2,}$", email):
@@ -150,12 +137,16 @@ def signup():
             not any(not c.isalnum() for c in password)):
             flash("Password must include uppercase, lowercase, number, and special character.", "error")
             return render_template("signup.html", entered=entered)
+        
+        # Duplicate username
+        all_users = db.collection("HealthCareP").select([]).stream()
 
-        # Duplicate check
-        if db.collection("HealthCareP").document(username).get().exists:
-            flash("Username already exists.", "error")
-            return render_template("signup.html", entered=entered)
-
+        for u in all_users:
+            if u.id.lower() == username.lower():
+                flash("Username already exists.", "error")
+                return render_template("signup.html", entered=entered)
+            
+         # Duplicate Email
         if db.collection("HealthCareP").where("Email", "==", email).limit(1).get():
             flash("Email already exists.", "error")
             return render_template("signup.html", entered=entered)
@@ -198,19 +189,19 @@ def signup():
 
         send_email_async(email, subject, html)
 
-        flash("Account created! Check your email to confirm.", "success")
+        flash(" Check your email to confirm.", "success")
         return redirect(url_for("Authentication.login"))
 
     return render_template("signup.html", entered=entered)
 
 
-# ---------------------------------------------------------
+
 #  EMAIL CONFIRMATION
-# ---------------------------------------------------------
 @auth_bp.route("/confirm/<token>")
 def confirm_email(token):
     s = get_serializer()
 
+    # Verify token
     try:
         data = s.loads(token, salt="email-confirm", max_age=3600)
     except SignatureExpired:
@@ -224,7 +215,7 @@ def confirm_email(token):
     if db.collection("HealthCareP").document(username).get().exists:
         return render_template("confirm.html", msg="⚠️ Account already confirmed.")
 
-    # Create the real user now
+    # Create account for user in firebase
     db.collection("HealthCareP").document(username).set({
         "UserID": username,
         "Name": f"{data['first']} {data['last']}",
@@ -235,9 +226,7 @@ def confirm_email(token):
     return render_template("confirm.html", msg="✅ Email confirmed! You can now log in.")
 
 
-# ---------------------------------------------------------
 #  AJAX Validation
-# ---------------------------------------------------------
 @auth_bp.route("/check")
 def check_field():
     field = request.args.get("field")
@@ -248,7 +237,14 @@ def check_field():
         if field == "username":
             result["valid"] = bool(re.fullmatch(r"^[A-Za-z][A-Za-z0-9._-]{2,31}$", value))
             if result["valid"]:
-                result["exists"] = db.collection("HealthCareP").document(value).get().exists
+                value_lower = value.lower()
+
+                # case-insensitive search
+                all_users = db.collection("HealthCareP").stream()
+                for u in all_users:
+                    if u.id.lower() == value_lower:
+                        result["exists"] = True
+                        break
 
         elif field == "email":
             result["valid"] = bool(re.fullmatch(r"^[^@]+@[^@]+\.[A-Za-z]{2,}$", value))
