@@ -33,9 +33,7 @@
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}
       {% for category, message in messages %}
-          <div class="banner-profile {{ 'ok' if category=='success' else 'err' }} show">
-              {{ message }}
-          </div>
+          <div class="banner {{ category }} show">{{ message }}</div>
       {% endfor %}
     {% endif %}
   {% endwith %}
@@ -65,12 +63,14 @@
 
             <p>
                 <strong>Username:</strong><br>
-                <input type="text" name="username" value="{{ user.UserID }}" readonly required>
+                <input type="text" id="profile-username" name="username" value="{{ user.UserID }}" readonly required>
+                <small id="username-msg" class="field-msg"></small>
             </p>
 
             <p>
                 <strong>Email:</strong><br>
-                <input type="email" name="email" value="{{ user.Email }}" readonly required>
+                <input type="email" id="profile-email" name="email" value="{{ user.Email }}" readonly required>
+                <small id="email-msg" class="field-msg"></small>
             </p>
 
             <!-- Save / Discard buttons -->
@@ -88,63 +88,203 @@
     </footer>
 
     <script>
-        // Buttons and elements
-        const editBtn = document.getElementById('editBtn');
-        const form = document.getElementById('profileForm');
-        const inputs = form.querySelectorAll('input:not([type=hidden])');
-        const actionButtons = document.getElementById('actionButtons');
-        const discardBtn = document.getElementById('discardBtn');
+/* ============================
+   BANNER AUTO-HIDE
+===============================*/
+setTimeout(() => {
+    const banner = document.querySelector('.banner.show');
+    if (banner) banner.classList.remove('show');
+}, 4000);
 
-        // Track edit mode
-        let isEditing = false;
 
-        // Store original values for "Discard" button
-        const originalValues = {};
-        inputs.forEach(input => {
-            originalValues[input.name] = input.value;
-        });
+/* ============================
+   PROFILE EDIT / DISCARD LOGIC
+===============================*/
+const editBtn = document.getElementById('editBtn');
+const form = document.getElementById('profileForm');
+const inputs = form.querySelectorAll('input:not([type=hidden])');
+const actionButtons = document.getElementById('actionButtons');
+const discardBtn = document.getElementById('discardBtn');
 
-        // Enable editing
-        editBtn.addEventListener('click', () => {
-            if (!isEditing) {
-                inputs.forEach(i => i.removeAttribute('readonly'));
-                form.classList.add('edit-mode');
-                actionButtons.classList.add('show');
-                editBtn.style.display = 'none';
-                isEditing = true;
-            }
-        });
+let isEditing = false;
 
-        // Discard changes + restore original values
-        discardBtn.addEventListener('click', () => {
-            inputs.forEach(i => {
-                i.value = originalValues[i.name];
-                i.setAttribute('readonly', true);
-            });
-            form.classList.remove('edit-mode');
-            actionButtons.classList.remove('show');
-            editBtn.style.display = 'block';
-            isEditing = false;
-        });
+// Save original values for discard
+const originalValues = {};
+inputs.forEach(input => originalValues[input.name] = input.value);
 
-        // After saving
-        form.addEventListener('submit', () => {
-            inputs.forEach(i => i.setAttribute('readonly', true));
-            form.classList.remove('edit-mode');
-            actionButtons.classList.remove('show');
-            editBtn.style.display = 'block';
-            isEditing = false;
-        });
+// Enable editing
+editBtn.addEventListener('click', () => {
+    if (!isEditing) {
+        inputs.forEach(i => i.removeAttribute('readonly'));
+        form.classList.add('edit-mode');
+        actionButtons.classList.add('show');
+        editBtn.style.display = 'none';
+        isEditing = true;
+    }
+});
 
-        // Auto-hide banner messages
-        const banners = document.querySelectorAll('.banner-profile');
-        if (banners.length > 0) {
-            banners.forEach(banner => {
-                banner.classList.add('show');
-                setTimeout(() => banner.classList.remove('show'), 5000);
-            });
+// Discard changes
+discardBtn.addEventListener('click', () => {
+    inputs.forEach(i => {
+        i.value = originalValues[i.name];
+        i.setAttribute('readonly', true);
+        i.classList.remove("is-valid", "is-invalid");
+    });
+
+    usernameMsg.textContent = "";
+    emailMsg.textContent = "";
+
+    form.classList.remove('edit-mode');
+    actionButtons.classList.remove('show');
+    editBtn.style.display = 'block';
+    isEditing = false;
+});
+
+// After Saving
+form.addEventListener('submit', () => {
+    inputs.forEach(i => i.setAttribute('readonly', true));
+    form.classList.remove('edit-mode');
+    actionButtons.classList.remove('show');
+    editBtn.style.display = 'block';
+    isEditing = false;
+});
+
+
+/* ============================
+   HELPER: debounce
+===============================*/
+function debounce(fn, wait) {
+    let t;
+    return (...args) => {
+        clearTimeout(t);
+        t = setTimeout(() => fn(...args), wait);
+    };
+}
+
+
+/* ============================
+   AJAX → /check
+===============================*/
+async function checkField(field, value) {
+    if (!value) return { ok: true, exists: false, valid: false, msg: "" };
+
+    try {
+        const res = await fetch(`/check?field=${field}&value=${value}`);
+        const data = await res.json();
+
+        let msg = "";
+
+        if (!data.valid) {
+            msg = field === "username"
+                ? "Username must start with a CAPITAL letter and be 3–32 characters."
+                : "Please enter a valid email address.";
+        } else if (data.exists) {
+            msg = field === "username"
+                ? "Username already taken"
+                : "Email already in use";
         }
-    </script>
+
+        return { ...data, msg };
+    }
+    catch (e) {
+        console.error(e);
+        return { ok: false, valid: false, exists: false, msg: "Server error" };
+    }
+}
+
+
+/* ============================
+   UI UPDATE
+===============================*/
+function updateFieldUI(input, msgEl, state) {
+    const val = input.value.trim();
+
+    if (!val) {
+        input.classList.remove("is-valid", "is-invalid");
+        msgEl.textContent = "";
+        msgEl.classList.remove("err", "ok");
+        return;
+    }
+
+    if (!state.ok || !state.valid || state.exists) {
+        input.classList.add("is-invalid");
+        input.classList.remove("is-valid");
+        msgEl.textContent = state.msg;
+        msgEl.classList.add("err");
+        msgEl.classList.remove("ok");
+    } else {
+        input.classList.add("is-valid");
+        input.classList.remove("is-invalid");
+        msgEl.textContent = "";
+        msgEl.classList.remove("err", "ok");
+    }
+}
+
+
+/* ============================
+   LOCAL VALIDATION (before server)
+===============================*/
+function localValidate(field, value) {
+
+    if (field === "username") {
+        // Capital letter + letters/numbers/underscore + 3–32 total length
+        const regex = /^[A-Z][A-Za-z0-9_]{2,31}$/;
+
+        if (!regex.test(value)) {
+            return {
+                ok: true,
+                valid: false,
+                exists: false,
+                msg: "Username must start with a CAPITAL letter and be 3–32 characters."
+            };
+        }
+    }
+
+    return null; // means "client-side OK → now check server"
+}
+
+
+/* ============================
+   ACTIVATE VALIDATION ON EDIT
+===============================*/
+
+// FIX: input IDs must exist in your HTML
+const usernameInput = document.querySelector("input[name='username']");
+const emailInput = document.querySelector("input[name='email']");
+const usernameMsg = document.getElementById("username-msg");
+const emailMsg = document.getElementById("email-msg");
+
+editBtn.addEventListener("click", () => {
+
+    usernameInput.addEventListener("input", debounce(async () => {
+        const val = usernameInput.value.trim();
+
+        // Step 1 → local validation
+        const local = localValidate("username", val);
+        if (local) {
+            updateFieldUI(usernameInput, usernameMsg, local);
+            return;
+        }
+
+        // Step 2 → server validation
+        const state = await checkField("username", val);
+        updateFieldUI(usernameInput, usernameMsg, state);
+
+    }, 300));
+
+
+    emailInput.addEventListener("input", debounce(async () => {
+        const val = emailInput.value.trim();
+
+        // No custom local email check, go straight to server
+        const state = await checkField("email", val);
+        updateFieldUI(emailInput, emailMsg, state);
+
+    }, 300));
+
+});
+
+</script>
 
 </body>
 </html>
