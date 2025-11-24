@@ -65,7 +65,7 @@ header.header {
 }
 
 .header-left .logo-img {
-    height: 80px;
+    height: 75px;
     width: auto;
 }
 
@@ -268,7 +268,6 @@ footer {
     font-family: Inter, ui-sans-serif, system-ui, Segoe UI, Roboto, "Helvetica Neue", Arial;
 }
 
-.form-page * { box-sizing: border-box; }
 
 .form-page .container { 
     max-width: 900px;
@@ -411,8 +410,6 @@ footer {
 }
 
 /* profile */
-
-
 .profile-icon {
     width: 50px;
     height: 50px;
@@ -899,11 +896,6 @@ input, select, textarea, button {
   -webkit-tap-highlight-color: transparent;
 }
 
-
- .logo-img {
-   height: 45px;
- }
-
  /* Profile / menu icon styling */
  .menu-icon-img {
    width: 28px;
@@ -915,11 +907,6 @@ input, select, textarea, button {
  .menu-icon-img:hover {
    transform: scale(1.1);
    opacity: 0.85;
- }
-
- @keyframes fadeIn {
-   from { opacity: 0; transform: translateY(-5px); }
-   to { opacity: 1; transform: translateY(0); }
  }
 
      /* medical notes */
