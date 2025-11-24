@@ -11,23 +11,19 @@ import requests
 reset_bp = Blueprint("auth_reset", __name__, url_prefix="/auth/reset")
 
 
-# ---------------------------------------------------------
 # Token Serializer
-# ---------------------------------------------------------
 def get_serializer():
     secret = current_app.config.get("SECRET_KEY")
     return URLSafeTimedSerializer(secret)
 
 
-# ---------------------------------------------------------
 # Brevo Email Setup
-# ---------------------------------------------------------
 BREVO_API_KEY = os.environ.get("BREVO_API_KEY", "")
 BREVO_SENDER_EMAIL = os.environ.get("BREVO_SENDER_EMAIL", "ouwnsystem@gmail.com")
 BREVO_SENDER_NAME = os.environ.get("BREVO_SENDER_NAME", "OuwN System")
 BREVO_ENDPOINT = "https://api.brevo.com/v3/smtp/email"
 
-
+# sending email through Brevo API
 def send_brevo_email(to_email: str, subject: str, html: str, text: str = None):
     """Send email using Brevo API."""
     if not BREVO_API_KEY:
@@ -69,9 +65,7 @@ def send_email_async(to, subject, html, text=None):
     thread.start()
 
 
-# ---------------------------------------------------------
 # Password Reset Request Page
-# ---------------------------------------------------------
 @reset_bp.route("/request", methods=["GET", "POST"])
 def reset_request():
     message = ""
@@ -79,14 +73,11 @@ def reset_request():
     if request.method == "POST":
         email = request.form.get("email", "").strip()
 
-        if not email:
-            return render_template("reset_password.html", message="Please enter your email.")
-
         # Email format validation
         if not re.fullmatch(r"^[^@]+@[^@]+\.[A-Za-z]{2,}$", email):
             return render_template("reset_password.html", message="Please enter a valid email address.")
 
-        #  1. Check if email exists
+        # Check if email exists
         users = db.collection("HealthCareP").where("Email", "==", email).get()
         if not users:
             return render_template("reset_password.html", message="No account found with this email.")
@@ -94,7 +85,7 @@ def reset_request():
         user_doc = users[0].to_dict()
         
 
-        #  2. Create password reset token
+        #  Create password reset token
         s = get_serializer()
         token = s.dumps({"email": email}, salt="password-reset")
         reset_link = url_for("auth_reset.reset_password", token=token, _external=True)
@@ -105,35 +96,35 @@ def reset_request():
         username = user_doc.get("Name", "User")
 
         html_body = f"""
-<html>
-  <body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-               color: #2d004d; background: #f4eefc; padding: 20px;">
-    <div style="max-width: 600px; margin: auto; background: #fff; border-radius: 10px;
-                padding: 30px; box-shadow: 0 5px 15px rgba(0,0,0,0.1);">
-      
-      <h2 style="color: #9975C1; text-align: center;">OuwN Password Reset</h2>
+            <html>
+            <body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+                        color: #2d004d; background: #f4eefc; padding: 20px;">
+                <div style="max-width: 600px; margin: auto; background: #fff; border-radius: 10px;
+                            padding: 30px; box-shadow: 0 5px 15px rgba(0,0,0,0.1);">
+                
+                <h2 style="color: #9975C1; text-align: center;">OuwN Password Reset</h2>
 
-      <p>Hi {username},</p>
+                <p>Hi {username},</p>
 
-      <p>You requested to reset your password. Click the button below to reset it:</p>
-      
-      <div style="text-align: center; margin: 30px 0;">
-        <a href="{reset_link}" 
-           style="background: #9975C1; color: white; padding: 12px 25px; 
-                  text-decoration: none; border-radius: 25px; font-weight: bold;">
-          Reset Password
-        </a>
-      </div>
+                <p>You requested to reset your password. Click the button below to reset it:</p>
+                
+                <div style="text-align: center; margin: 30px 0;">
+                    <a href="{reset_link}" 
+                    style="background: #9975C1; color: white; padding: 12px 25px; 
+                            text-decoration: none; border-radius: 25px; font-weight: bold;">
+                    Reset Password
+                    </a>
+                </div>
 
-      <p>If you didn't request this, you can ignore this email.</p>
+                <p>If you didn't request this, you can ignore this email.</p>
 
-      <p>Thanks,<br><strong>OuwN Team</strong></p>
-    </div>
-  </body>
-</html>
-"""
+                <p>Thanks,<br><strong>OuwN Team</strong></p>
+                </div>
+            </body>
+            </html>
+            """
 
-        # Send email async
+        # Send email 
         try:
             send_email_async(email, subject, html_body, text_body)
             message = "✅ A reset email has been sent! Check your inbox."
@@ -145,9 +136,8 @@ def reset_request():
 
 
 
-# ---------------------------------------------------------
+
 # Reset Password Form
-# ---------------------------------------------------------
 @reset_bp.route("/<token>", methods=["GET", "POST"])
 def reset_password(token):
     s = get_serializer()
