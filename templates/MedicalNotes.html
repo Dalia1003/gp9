@@ -4,50 +4,6 @@
   <meta charset="UTF-8">
   <title>Add Medical Note & ICD Codes</title>
   <link rel="stylesheet" href="/static/style.css">
-
-  <style>
-    /* Layout containers */
-    .icd-container { margin-top: 20px; padding: 10px; border: 1px solid #ccc; }
-    .result-item { margin: 5px 0; display: flex; align-items: center; padding: 5px; border-bottom: 1px solid #eee; }
-
-    /* Category boxes */
-    .category-boxes { display: flex; overflow-x: auto; white-space: nowrap; gap: 8px; margin-bottom: 10px; padding-bottom: 5px; }
-    .category-box { padding: 5px 10px; border: 1px solid #007BFF; border-radius: 5px; background-color: #f0f8ff; cursor: pointer; transition: 0.2s; flex: 0 0 auto; font-size: 0.9rem; }
-    .category-box:hover, .category-box.active { background-color: #007BFF; color: #fff; font-weight: bold; }
-
-    /* Selected codes */
-    #selectedCodesContainer { display: flex; overflow-x: auto; white-space: nowrap; gap: 5px; margin-bottom: 10px; padding-bottom: 5px; }
-    .selected-code { background-color: #007BFF; color: #fff; padding: 4px 8px; border-radius: 4px; font-size: 0.85rem; display: flex; align-items: center; gap: 5px; flex: 0 0 auto; }
-
-    /* Hide scrollbars */
-    .category-boxes, #selectedCodesContainer { -ms-overflow-style: none; scrollbar-width: none; }
-    .category-boxes::-webkit-scrollbar, #selectedCodesContainer::-webkit-scrollbar { display: none; }
-
-    /* Form layout */
-    .row { margin-bottom: 15px; }
-    .row label { display: block; margin-bottom: 5px; font-weight: bold; }
-    input[type=text], textarea { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
-
-    /* Buttons */
-    button { padding: 15px 12px; border: none; background-color: #007BFF; color: #fff; border-radius: 4px; cursor: pointer; }
-    button:hover { background-color: #0056b3; }
-
-    /* Floating banner */
-    .banner { display: none; padding: 12px 16px; border-radius: 10px; max-width: 540px; text-align: center; font-weight: 600;
-              position: fixed; top: 20px; left: 50%; transform: translateX(-50%); z-index: 9999; box-shadow: 0 4px 10px rgba(0,0,0,0.2); }
-    .banner.show { display: block; }
-    .banner.success { background: #2e7d32; color: #fff; }
-    .banner.error { background: #f44336; color: #fff; }
-
-    /* Search bar */
-    .search-section { display: flex; justify-content: center; align-items: center; gap: 10px; margin-top: 20px; margin-bottom: 10px; }
-    .search-bar { flex: 1; max-width: 450px; }
-    #searchBox { width: 100%; padding: 12px 14px; border: 2px solid #007BFF; border-radius: 8px; font-size: 1rem; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
-    #searchBox:focus { border-color: #0056b3; box-shadow: 0 3px 8px rgba(0,0,0,0.15); }
-
-    .search-btn { background-color: #007BFF; padding: 12px 22px; border-radius: 8px; }
-    .search-btn:hover { background-color: #0056b3; }
-  </style>
 </head>
 
 <body class="form-page medical-note">
@@ -111,14 +67,14 @@
 </footer>
 
 <script>
-  // ---------- State ----------
+  // State
   let selectedCodes = {{ selected_icd_codes | default([]) | tojson | safe }};
   let currentCategory = "";
   let currentICDResults = [];   // full result list for current view
   let renderIndex = 0;          // how many items already rendered
   const PAGE_SIZE = 40;         // how many codes to render per batch
 
-  // ---------- Helpers ----------
+  // Helpers 
   function showMessage(msg, type = "success", duration = 3000) {
     const banner = document.getElementById("saveMessage");
     banner.textContent = msg;
@@ -152,7 +108,7 @@
 
   window.removeCode = removeCode; // so onclick in HTML string works
 
-  // ---------- Load Categories ----------
+  // Load Categories 
   function initCategories() {
     fetch("/icd_categories")
       .then((res) => res.json())
@@ -180,7 +136,7 @@
       });
   }
 
-  // ---------- Load ICD by Category ----------
+  //  Load ICD by Category
   function loadByCategory(category) {
     fetch(`/icd_by_category/${encodeURIComponent(category)}`)
       .then((res) => res.json())
@@ -192,7 +148,7 @@
       });
   }
 
-  // ---------- Search ----------
+  // Search 
   function searchICD() {
     const term = document.getElementById("searchBox").value.trim();
     if (!term) return;
@@ -213,7 +169,7 @@
 
   window.searchICD = searchICD; // used by the Search button onclick
 
-  // ---------- Infinite Scroll Rendering ----------
+  // Infinite Scroll Rendering
   function displayICDResults(data) {
     const resultsDiv = document.getElementById("results");
     resultsDiv.innerHTML = "";
@@ -272,7 +228,7 @@
     }
   }
 
-  // ---------- Select / Unselect Codes ----------
+  // Select and Unselect Codes 
   function initResultsListener() {
     document.getElementById("results").addEventListener("change", (e) => {
       if (!e.target.matches("input[type='checkbox']")) return;
@@ -292,7 +248,7 @@
     });
   }
 
-  // ---------- Save Note + ICD Codes ----------
+  // Save Note + ICD Codes
   function initSaveButton() {
     document
       .getElementById("saveBothBtn")
@@ -333,7 +289,7 @@
       });
   }
 
-  // ---------- Init on Load ----------
+  // Init on Load
   window.addEventListener("load", () => {
     updateSelectedCodesUI();
     initCategories();
