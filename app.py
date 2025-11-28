@@ -1,13 +1,22 @@
 from dotenv import load_dotenv
-load_dotenv()
-
+load_dotenv() # Load environment variables from .env file
 from flask import Flask, render_template, jsonify, request, session, redirect, url_for, flash
-from firebase.Initialization import db
+# Flask → Needed
+# render_template → Used for HTML pages
+# jsonify → Used for AJAX responses
+# request → Used to read form/AJAX data
+# session → Needed for login sessions
+# redirect, url_for → Needed for redirects
+# flash → Needed for error/success messages
+from firebase.Initialization import db # Needed — Firestore reference
 from datetime import datetime, date
+# datetime → Needed for note creation time
+# date → Needed for DOB validation
 import os, json, re, uuid
-
-
-
+# os → file paths, reading .env variables  
+# json → loading icd_data.json  
+# re → regex validation  
+# uuid → unique IDs for notes + ICD records
 
 
 # Create Flask App
@@ -15,7 +24,7 @@ def create_app():
     app = Flask(__name__)
     # secret key for sessions
     app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "fallback-secret-key")
-    app.config["PROPAGATE_EXCEPTIONS"] = True
+    app.config["PROPAGATE_EXCEPTIONS"] = True # Allow Flask to show detailed exceptions
 
 
      # loading all blueprints (auth + reset)
@@ -29,7 +38,7 @@ def create_app():
     ICD_FILE = os.path.join(app.root_path, "static", "icd_data.json")
     if os.path.exists(ICD_FILE):
         with open(ICD_FILE, "r", encoding="utf-8") as f:
-            app.icd_data = json.load(f)
+            app.icd_data = json.load(f) # Store JSON in memory
     else:
         print("⚠️ icd_data.json missing in /static")
         app.icd_data = []
@@ -43,11 +52,10 @@ def create_app():
     # DASHBOARD
     @app.route("/dashboard")
     def dashboard():
-        if 'user_id' not in session:
+        if 'user_id' not in session: # Block access if not logged in
             return redirect(url_for('Authentication.login'))
 
-        # pulling all patients from Firestore to list them in dashboard
-        patients = []
+        patients = [] # Store all patients to display
         try:
             docs = db.collection("Patient").stream()
             for doc in docs:
@@ -69,14 +77,13 @@ def create_app():
         return render_template("dashboard.html", patients=patients, msg_text=msg_text)
 
 
-    
     # ADD PATIENT
     @app.route("/add_patient", methods=["GET", "POST"])
     def add_patient():
         if 'user_id' not in session:
             return redirect(url_for('Authentication.login'))
 
-        errors = []
+        errors = [] # Collect validation errors
         # form data
         if request.method == "POST":
             pid = request.form.get("ID", "").strip()
@@ -88,16 +95,19 @@ def create_app():
             address = request.form.get("address", "").strip()
             blood = request.form.get("blood_type", "").strip()
 
-            # Validation
+            # Required fields check
             if not all([pid, name, dob, gender, phone, email, address, blood]):
                 errors.append("All fields are required.")
 
+            # ID format check (National ID must be 10 digits)
             if pid and not re.fullmatch(r'\d{10}', pid):
                 errors.append("ID must be exactly 10 digits.")
 
+            # Phone format check
             if phone and not re.fullmatch(r'^05\d{8}$', phone):
                 errors.append("Phone must start with 05 and be 10 digits.")
 
+            # Email format check
             if email and not re.match(r'^[^@]+@[^@]+\.[^@]+$', email):
                 errors.append("Invalid email format.")
             
@@ -110,7 +120,6 @@ def create_app():
 
                     # 2) Age must be <= 130
                     age = date.today().year - dob_date.year
-                    # adjust if birthday hasn't passed yet this year
                     if (date.today().month, date.today().day) < (dob_date.month, dob_date.day):
                         age -= 1
 
@@ -207,7 +216,6 @@ def create_app():
         exists = db.collection("Patient").document(v).get().exists if v else False
         return jsonify({"exists": exists})
 
-
     
     # extract categories from JSON 
     @app.route("/icd_categories")
@@ -216,10 +224,11 @@ def create_app():
             return jsonify({"error": "Unauthorized"}), 401
 
         categories = sorted({cat["Category"] for cat in app.icd_data})
-        categories.insert(0, "All")
+        categories.insert(0, "All") # Add "All" option
         return jsonify(categories)
 
 
+    # Return ICD codes by category
     @app.route("/icd_by_category/<path:category>")
     def icd_by_category(category):
         if 'user_id' not in session:
@@ -228,11 +237,11 @@ def create_app():
         results = []
 
         if category.lower() == "all":
-            # return everything
+             # Return all codes
             for cat in app.icd_data:
                 results.extend(cat.get("Codes", []))
         else:
-            # return specific category only
+            # Return only selected category
             for cat in app.icd_data:
                 if cat["Category"].lower() == category.lower():
                     results = cat.get("Codes", [])
@@ -240,7 +249,7 @@ def create_app():
 
         return jsonify(results[:100])
 
-
+    # Search ICD codes by term and code
     @app.route("/search_icd")
     def search_icd():
         if 'user_id' not in session:
@@ -265,9 +274,7 @@ def create_app():
         unique = {item["Code"]: item for item in results}
         return jsonify(list(unique.values())[:30])
 
-
-    
-    
+ 
     # PROFILE
     @app.route("/profile", methods=["GET", "POST"])
     def profile():
@@ -278,6 +285,7 @@ def create_app():
         old_ref = db.collection('HealthCareP').document(old_id)
         doc = old_ref.get()
 
+        # Load current user data
         current_user = doc.to_dict() if doc.exists else {"Name": "", "UserID": "", "Email": ""}
 
         # Update Profile
@@ -288,10 +296,6 @@ def create_app():
             new_username = request.form.get("username", "").strip()
 
             try:
-                # Required fields check
-                if not new_name or not new_email or not new_username:
-                    flash("All fields are required.", "error")
-                    return redirect(url_for("profile"))
 
                 # Email validation
                 if not re.match(r"^[^@]+@[^@]+\.[^@]+$", new_email):
@@ -302,24 +306,28 @@ def create_app():
                 if not re.fullmatch(r"^[A-Z][A-Za-z0-9._-]{2,31}$", new_username):
                     flash("Username must start with a CAPITAL letter and be 3–32 characters.", "error")
                     return redirect(url_for("profile"))
+   
+                # No changes → do nothing and show no message
+                if (new_name == current_user["Name"] 
+                    and new_email == current_user["Email"] 
+                    and new_username.strip().lower() == old_id.strip().lower()):
+                    return redirect(url_for("profile"))
                 
-                # Check if new email exists
+                # Check if email belongs to another user
                 email_query = db.collection("HealthCareP").where("Email", "==", new_email).stream()
                 for docx in email_query:
-                    if docx.id != old_id:  # email belongs to another user
-                        flash("Email already exists.", "error")
-                        return redirect(url_for("profile"))
+                    if docx.id != old_id:  # email belongs to different user
+                        return redirect(url_for("profile"))  # silently ignore update
                     
-                # Check if new username exists
-                if new_username != old_id:
-                    users = db.collection("HealthCareP").stream()
-                    for u in users:
-                        if u.id.lower() == new_username.lower() and u.id != old_id:
-                            flash("Username already taken.", "error")
-                            return redirect(url_for("profile"))   
+                if new_username.strip().lower() != old_id.strip().lower():
+                    all_users = db.collection("HealthCareP").stream()
+                    for u in all_users:
+                        if u.id.strip().lower() == new_username.strip().lower():
+                            return redirect(url_for("profile"))  # silent abort
 
+    
                 # updating without username change 
-                if new_username == old_id:
+                if new_username.strip().lower() == old_id.strip().lower():
                     old_ref.update({
                         "Name": new_name,
                         "Email": new_email
@@ -328,13 +336,15 @@ def create_app():
                     return redirect(url_for("profile"))
 
                 # If username CHANGED , create new doc 
-                new_ref = db.collection("HealthCareP").document(new_username)
+                clean_username = new_username.strip()
+                new_ref = db.collection("HealthCareP").document(clean_username)
+
 
                 # Copy data to new doc
                 new_ref.set({
                     "Name": new_name,
                     "Email": new_email,
-                    "UserID": new_username,
+                    "UserID": clean_username,
                     "Password": current_user["Password"]
                 })
 
@@ -342,7 +352,7 @@ def create_app():
                 old_ref.delete()
 
                 # Update session
-                session['user_id'] = new_username
+                session['user_id'] = clean_username
                 session['user_name'] = new_name
                 session['user_email'] = new_email
 
@@ -381,6 +391,63 @@ def create_app():
 
         return render_template("profile.html", user=current_user)
 
+    @app.route("/check")
+    def check_unique():
+        if 'user_id' not in session:
+            return jsonify({"ok": False, "valid": False, "exists": False})
+
+        field = request.args.get("field", "")
+        value = request.args.get("value", "").strip()
+        current_user = session['user_id'].strip().lower()
+
+        # 1) Validate empty field
+        if not field or not value:
+            return jsonify({"ok": True, "valid": False, "exists": False})
+
+        # 2) Username validation
+        if field == "username":
+            value_lower = value.lower()
+
+            # Local validation rule (Capital letter, 3-32 chars)
+            if not re.fullmatch(r"^[A-Z][A-Za-z0-9._-]{2,31}$", value):
+                return jsonify({"ok": True, "valid": False, "exists": False})
+
+            # Ignore your own username
+            if value_lower == current_user:
+                return jsonify({"ok": True, "valid": True, "exists": False})
+
+            # Check Firestore for duplicates
+            all_users = db.collection("HealthCareP").stream()
+            for u in all_users:
+                if u.id.strip().lower() == value_lower:
+                    return jsonify({"ok": True, "valid": True, "exists": True})
+
+            return jsonify({"ok": True, "valid": True, "exists": False})
+
+
+        # 3) Email validation
+        if field == "email":
+            if not re.match(r"^[^@]+@[^@]+\.[^@]+$", value):
+                return jsonify({"ok": True, "valid": False, "exists": False})
+
+            value_lower = value.lower()
+            # Ignore your own email
+            # (email stored inside Firestore doc)
+            user_doc = db.collection("HealthCareP").document(current_user).get()
+            if user_doc.exists:
+                if user_doc.to_dict().get("Email", "").strip().lower() == value_lower:
+                    return jsonify({"ok": True, "valid": True, "exists": False})
+
+            # Check duplicates
+            email_query = db.collection("HealthCareP").where("Email", "==", value).stream()
+            for doc in email_query:
+                if doc.id != current_user:
+                    return jsonify({"ok": True, "valid": True, "exists": True})
+
+            return jsonify({"ok": True, "valid": True, "exists": False})
+
+        # 4) Default fallback
+        return jsonify({"ok": False, "valid": False, "exists": False})
 
 
     # LOGOUT
@@ -390,8 +457,6 @@ def create_app():
         return redirect(url_for("home"))
 
     return app
-
-
 
 # Local Development
 if __name__ == "__main__":
