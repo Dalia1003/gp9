@@ -13,7 +13,7 @@
 </head>
 
 <body>
-    <!-- Header + Breadcrumb-->
+    <!-- Header and Breadcrumb-->
     {% include "header.html" %}
 
     <nav class="ouwn-breadcrumb-bar" role="navigation" aria-label="Breadcrumb">
@@ -29,7 +29,7 @@
             </span>
         </div>
     </nav>
-    <!--  Flash Banners (Success / Error) -->
+    <!--  Flash Banners  -->
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}
       {% for category, message in messages %}
@@ -88,18 +88,14 @@
     </footer>
 
     <script>
-/* ============================
-   BANNER AUTO-HIDE
-===============================*/
+/* BANNER AUTO-HIDE*/
 setTimeout(() => {
     const banner = document.querySelector('.banner.show');
     if (banner) banner.classList.remove('show');
 }, 4000);
 
 
-/* ============================
-   PROFILE EDIT / DISCARD LOGIC
-===============================*/
+/* PROFILE EDIT / DISCARD LOGIC */
 const editBtn = document.getElementById('editBtn');
 const form = document.getElementById('profileForm');
 const inputs = form.querySelectorAll('input:not([type=hidden])');
@@ -150,9 +146,7 @@ form.addEventListener('submit', () => {
 });
 
 
-/* ============================
-   HELPER: debounce
-===============================*/
+/* Avoids sending too many AJAX calls*/
 function debounce(fn, wait) {
     let t;
     return (...args) => {
@@ -162,11 +156,24 @@ function debounce(fn, wait) {
 }
 
 
-/* ============================
-   AJAX → /check
-===============================*/
+/*  AJAX check*/
 async function checkField(field, value) {
     if (!value) return { ok: true, exists: false, valid: false, msg: "" };
+
+    // Get original username & email from the page (your own data)
+    const originalUsername = originalValues["username"].trim().toLowerCase();
+    const originalEmail = originalValues["email"].trim().toLowerCase();
+    const valLower = value.trim().toLowerCase();
+
+    // --- Ignore your own username ---
+    if (field === "username" && valLower === originalUsername) {
+        return { ok: true, valid: true, exists: false, msg: "" };
+    }
+
+    // --- Ignore your own email ---
+    if (field === "email" && valLower === originalEmail) {
+        return { ok: true, valid: true, exists: false, msg: "" };
+    }
 
     try {
         const res = await fetch(`/check?field=${field}&value=${value}`);
@@ -193,9 +200,8 @@ async function checkField(field, value) {
 }
 
 
-/* ============================
-   UI UPDATE
-===============================*/
+
+/*UI UPDATE (valid/invalid)*/
 function updateFieldUI(input, msgEl, state) {
     const val = input.value.trim();
 
@@ -205,7 +211,7 @@ function updateFieldUI(input, msgEl, state) {
         msgEl.classList.remove("err", "ok");
         return;
     }
-
+    // If any validation failed show error
     if (!state.ok || !state.valid || state.exists) {
         input.classList.add("is-invalid");
         input.classList.remove("is-valid");
@@ -221,9 +227,7 @@ function updateFieldUI(input, msgEl, state) {
 }
 
 
-/* ============================
-   LOCAL VALIDATION (before server)
-===============================*/
+/* LOCAL VALIDATION*/
 function localValidate(field, value) {
 
     if (field === "username") {
@@ -240,13 +244,11 @@ function localValidate(field, value) {
         }
     }
 
-    return null; // means "client-side OK → now check server"
+    return null;
 }
 
 
-/* ============================
-   ACTIVATE VALIDATION ON EDIT
-===============================*/
+/* ACTIVATE VALIDATION ON EDIT*/
 
 // FIX: input IDs must exist in your HTML
 const usernameInput = document.querySelector("input[name='username']");
@@ -257,16 +259,16 @@ const emailMsg = document.getElementById("email-msg");
 editBtn.addEventListener("click", () => {
 
     usernameInput.addEventListener("input", debounce(async () => {
-        const val = usernameInput.value.trim();
+        const val = usernameInput.value.trim().toLowerCase();
 
-        // Step 1 → local validation
-        const local = localValidate("username", val);
+        // local validation
+        const local = localValidate("username", usernameInput.value.trim());
         if (local) {
             updateFieldUI(usernameInput, usernameMsg, local);
             return;
         }
 
-        // Step 2 → server validation
+        //  server validation
         const state = await checkField("username", val);
         updateFieldUI(usernameInput, usernameMsg, state);
 
