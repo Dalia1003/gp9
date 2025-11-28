@@ -6,7 +6,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-  <div class="banner {{ 'ok' if '✅' in msg else 'err' }}">{{ msg }}</div>
+  <div class="banner show {{ 'ok' if '✅' in msg else 'err' }}">{{ msg }}</div>
   <div class="center-page">
     <a href="{{ url_for('Authentication.login') }}" class="btn-conform">
         Go to Login
