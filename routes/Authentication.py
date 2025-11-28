@@ -2,14 +2,23 @@ from flask import (
     Blueprint, request, render_template, redirect,
     url_for, flash, session, current_app, jsonify
 )
-from werkzeug.security import generate_password_hash, check_password_hash
-from firebase.Initialization import db
-from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
+# Blueprint → Needed for routing
+# request → Needed for reading login/signup form data
+# render_template → Needed for HTML pages
+# redirect, url_for → For navigation
+# flash → Error messages
+# session → Login sessions
+# current_app → Needed for get_serializer()
+# jsonify → Used in AJAX validation
+from werkzeug.security import generate_password_hash, check_password_hash # Needed for hashing and verifying passwords
+from firebase.Initialization import db # Needed — database reference
+from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature # Needed for email confirmation token system
 from datetime import datetime, timezone
-import re
-import os
-import requests
-import threading
+# used for logging timestamps or validation
+import re # Needed for validating email, username formats
+import os # Needed for BREVO_API_KEY, BREVO_SENDER
+import requests # Needed for sending emails using Brevo API
+import threading # Needed for send_email_async() background thread
 
 
 #  Blueprint
@@ -23,7 +32,7 @@ def get_serializer():
 
 
 
-#  Brevo Email Setup
+# Load Brevo API credentials from environment variables
 BREVO_API_KEY = os.environ.get("BREVO_API_KEY", "")
 BREVO_SENDER_EMAIL = os.environ.get("BREVO_SENDER_EMAIL", "ouwnsystem@gmail.com")
 BREVO_SENDER_NAME = os.environ.get("BREVO_SENDER_NAME", "OuwN System")
@@ -35,6 +44,7 @@ def send_brevo_email(to_email: str, subject: str, html: str, text: str = None):
         print("❌ BREVO_API_KEY missing!")
         return
 
+    # Email body sent to Brevo
     payload = {
         "sender": {"email": BREVO_SENDER_EMAIL, "name": BREVO_SENDER_NAME},
         "to": [{"email": to_email}],
@@ -58,7 +68,7 @@ def send_brevo_email(to_email: str, subject: str, html: str, text: str = None):
     except Exception as e:
         print("❌ Email send failed:", e)
 
-
+# Sends email in a background thread so Flask does not wait for it
 def send_email_async(to, subject, html, text=None):
     t = threading.Thread(target=lambda: send_brevo_email(to, subject, html, text))
     t.daemon = True
@@ -74,10 +84,10 @@ def login():
     if request.method == "POST":
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "").strip()
-        entered_username = username
+        entered_username = username  # Used to refill username field after errors
 
         try:
-            # pull user from firestore
+            # Look up user in Firestore using their UserID
             q = db.collection("HealthCareP").where("UserID", "==", username).limit(1).get()
             if not q:
                 flash("Invalid username or password.", "error")
@@ -86,7 +96,7 @@ def login():
             user_doc = q[0]
             user = user_doc.to_dict()
            
-            # comparing password hashes
+            # Compare stored hashed password with entered password
             if not check_password_hash(user["Password"], password):
                 flash("Invalid username or password.", "error")
                 return render_template("login.html", entered_username=username)
@@ -124,9 +134,9 @@ def signup():
             flash("Enter a valid email address.", "error")
             return render_template("signup.html", entered=entered)
 
-        # Username validation
-        if not re.fullmatch(r"^[A-Za-z][A-Za-z0-9._-]{2,31}$", username):
-            flash("Username must start with a letter and be 3–32 characters.", "error")
+        # Username format: must begin with letter, 3–32 characters
+        if not re.fullmatch(r"^[A-Z][A-Za-z0-9._-]{2,31}$", username):
+            flash("Username must start with a capital  letter and be 3–32 characters.", "error")
             return render_template("signup.html", entered=entered)
 
         # Password checks
@@ -140,7 +150,6 @@ def signup():
         
         # Duplicate username
         all_users = db.collection("HealthCareP").select([]).stream()
-
         for u in all_users:
             if u.id.lower() == username.lower():
                 flash("Username already exists.", "error")
@@ -154,7 +163,7 @@ def signup():
         # Hash password
         hashed_pw = generate_password_hash(password)
 
-        # Create token containing full user data (NO saving yet)
+        # Create token containing full user data .NOT saved yet
         s = get_serializer()
         token = s.dumps({
             "first": first,
@@ -167,7 +176,7 @@ def signup():
         link = url_for("Authentication.confirm_email", token=token, _external=True)
         subject = "Confirm Your Email - OuwN"
 
-        # Email template
+        # Email content 
         html = f"""
         <html>
         <body style="font-family:'Segoe UI', Tahoma; background:#f4eefc; padding:20px;">
@@ -211,7 +220,7 @@ def confirm_email(token):
 
     username = data["username"]
 
-    # Duplicate prevention
+     # Prevent re-confirming same account
     if db.collection("HealthCareP").document(username).get().exists:
         return render_template("confirm.html", msg="⚠️ Account already confirmed.")
 
@@ -234,8 +243,9 @@ def check_field():
     result = {"ok": True, "valid": True, "exists": False}
 
     try:
+         # Username validation
         if field == "username":
-            result["valid"] = bool(re.fullmatch(r"^[A-Za-z][A-Za-z0-9._-]{2,31}$", value))
+            result["valid"] = bool(re.fullmatch(r"^[A-Z][A-Za-z0-9._-]{2,31}$", value))
             if result["valid"]:
                 value_lower = value.lower()
 
@@ -245,13 +255,14 @@ def check_field():
                     if u.id.lower() == value_lower:
                         result["exists"] = True
                         break
-
+         # Email validation               
         elif field == "email":
             result["valid"] = bool(re.fullmatch(r"^[^@]+@[^@]+\.[A-Za-z]{2,}$", value))
             if result["valid"]:
                 result["exists"] = len(db.collection("HealthCareP")
                     .where("Email", "==", value).limit(1).get()) > 0
-
+        
+         # Unknown field
         else:
             result["ok"] = False
 
