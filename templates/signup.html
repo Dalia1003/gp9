@@ -103,7 +103,7 @@ async function checkField(field, value) {
 
         if (!data.valid) {
             msg = (field === "username")
-                ? "Username must start with a letter and be 3–32 chars."
+                ? "Username must start with a capital letter and be 3–32 chars."
                 : "Please enter a valid email address.";
         }
         else if (data.exists) {
@@ -124,6 +124,7 @@ async function checkField(field, value) {
 function updateField(input, msgEl, state) {
     const val = input.value.trim();
 
+    // No text → clear validation
     if (!val) {
         input.classList.remove("is-valid", "is-invalid");
         msgEl.textContent = "";
@@ -131,12 +132,14 @@ function updateField(input, msgEl, state) {
         return;
     }
 
+    // Invalid or exists → show red
     if (!state.ok || !state.valid || state.exists) {
         input.classList.add("is-invalid");
         input.classList.remove("is-valid");
         msgEl.textContent = state.msg;
         msgEl.classList.add("err");
         msgEl.classList.remove("ok");
+        // Valid → show green
     } else {
         input.classList.add("is-valid");
         input.classList.remove("is-invalid");
@@ -178,6 +181,7 @@ emailEl.addEventListener("input", debounce(async () => {
         };
     }
 
+    // Set the checklist row to ok/bad
     function setRow(k, ok) {
         const li = list.querySelector(`li[data-k="${k}"]`);
         li.classList.toggle("pw-ok", ok);
@@ -185,6 +189,7 @@ emailEl.addEventListener("input", debounce(async () => {
         li.querySelector(".pw-icon").textContent = ok ? "✅" : "❌";
     }
 
+     // Update as user types
     pw.addEventListener("input", () => {
         const c = evalPw(pw.value);
         ['len','upper','lower','digit','special'].forEach(k => setRow(k, c[k]));
@@ -194,11 +199,13 @@ emailEl.addEventListener("input", debounce(async () => {
         pw.classList.toggle("is-valid", allOk);
     });
 
+    // Show checklist only when focused
     pw.addEventListener("focus", () => list.style.display = "block");
     pw.addEventListener("blur", () => {
         if (!pw.value.trim()) list.style.display = "none";
     });
 })();
+/* Auto-hide banners */
  setTimeout(() => {
     const banner = document.querySelector('.banner.show');
     if (banner) {
