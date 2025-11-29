@@ -232,7 +232,7 @@ function localValidate(field, value) {
 
     if (field === "username") {
         // Capital letter + letters/numbers/underscore + 3–32 total length
-        const regex = /^[A-Z][A-Za-z0-9_]{2,31}$/;
+        const regex = /^[A-Z][A-Za-z0-9._-]{2,31}$/;
 
         if (!regex.test(value)) {
             return {
@@ -259,7 +259,7 @@ const emailMsg = document.getElementById("email-msg");
 editBtn.addEventListener("click", () => {
 
     usernameInput.addEventListener("input", debounce(async () => {
-        const val = usernameInput.value.trim().toLowerCase();
+        const val = usernameInput.value.trim();
 
         // local validation
         const local = localValidate("username", usernameInput.value.trim());
