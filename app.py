@@ -169,9 +169,6 @@ def create_app():
             note_text = data.get("note_text")
             icd_codes = data.get("icd_codes", [])
             
-            # check missing fields 
-            if not pid or not note_text or not icd_codes:
-                return jsonify({"status": "error", "message": "Missing fields"}), 400
 
             patient_ref = db.collection("Patient").document(pid)
 
@@ -398,7 +395,7 @@ def create_app():
 
         field = request.args.get("field", "")
         value = request.args.get("value", "").strip()
-        current_user = session['user_id'].strip().lower()
+        current_user = session['user_id'].strip()
 
         # 1) Validate empty field
         if not field or not value:
@@ -412,8 +409,8 @@ def create_app():
             if not re.fullmatch(r"^[A-Z][A-Za-z0-9._-]{2,31}$", value):
                 return jsonify({"ok": True, "valid": False, "exists": False})
 
-            # Ignore your own username
-            if value_lower == current_user:
+            # Ignore user old username
+            if value_lower == current_user.lower():
                 return jsonify({"ok": True, "valid": True, "exists": False})
 
             # Check Firestore for duplicates
@@ -431,10 +428,14 @@ def create_app():
                 return jsonify({"ok": True, "valid": False, "exists": False})
 
             value_lower = value.lower()
-            # Ignore your own email
-            # (email stored inside Firestore doc)
-            user_doc = db.collection("HealthCareP").document(current_user).get()
-            if user_doc.exists:
+            # Ignore user old email
+            user_doc = None
+            for u in db.collection("HealthCareP").stream():
+                if u.id.lower() == current_user.lower():
+                    user_doc = u
+                    break
+            # If same as your current email → OK
+            if user_doc:
                 if user_doc.to_dict().get("Email", "").strip().lower() == value_lower:
                     return jsonify({"ok": True, "valid": True, "exists": False})
 
