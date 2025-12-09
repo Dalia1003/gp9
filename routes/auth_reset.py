@@ -1,13 +1,21 @@
 from flask import Blueprint, render_template, request, flash, redirect, url_for, current_app
-from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
-from werkzeug.security import generate_password_hash
-from firebase.Initialization import db
-import os
-import re
-import threading
-import traceback
-import requests
+# Blueprint → Needed
+# render_template → Needed for HTML pages
+# request → Needed for reading the email + new password form
+# flash → Error messages
+# redirect, url_for → Required for navigation after reset
+# current_app → Needed for token serializer
+from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature # Needed for generating + verifying password reset tokens
+from werkzeug.security import generate_password_hash # Needed for hashing the new password
+from firebase.Initialization import db # Needed for finding/updating users
+import os # Needed for BREVO API configuration
+import re # Needed for validating email format + password rules
+import threading # Needed for async email sending (send_email_async)
+import traceback # Helpful for debugging errors — optional but useful
+import requests# Needed to call Brevo API for sending the reset email
 
+
+# Blueprint for all password reset related routes
 reset_bp = Blueprint("auth_reset", __name__, url_prefix="/auth/reset")
 
 
@@ -17,7 +25,7 @@ def get_serializer():
     return URLSafeTimedSerializer(secret)
 
 
-# Brevo Email Setup
+# Load Brevo email credentials from environment variables
 BREVO_API_KEY = os.environ.get("BREVO_API_KEY", "")
 BREVO_SENDER_EMAIL = os.environ.get("BREVO_SENDER_EMAIL", "ouwnsystem@gmail.com")
 BREVO_SENDER_NAME = os.environ.get("BREVO_SENDER_NAME", "OuwN System")
@@ -30,6 +38,7 @@ def send_brevo_email(to_email: str, subject: str, html: str, text: str = None):
         print("❌ Missing BREVO_API_KEY")
         return
 
+    # API payload with the message content
     payload = {
         "sender": {"email": BREVO_SENDER_EMAIL, "name": BREVO_SENDER_NAME},
         "to": [{"email": to_email}],
@@ -49,6 +58,7 @@ def send_brevo_email(to_email: str, subject: str, html: str, text: str = None):
         print(f"📨 Sending reset email → {to_email}")
         res = requests.post(BREVO_ENDPOINT, json=payload, headers=headers)
 
+        # Log errors if any
         if res.status_code >= 400:
             print("❌ BREVO ERROR:", res.text)
         else:
@@ -59,6 +69,7 @@ def send_brevo_email(to_email: str, subject: str, html: str, text: str = None):
         traceback.print_exc()
 
 
+# Runs the email-sending function in a background thread
 def send_email_async(to, subject, html, text=None):
     thread = threading.Thread(target=lambda: send_brevo_email(to, subject, html, text))
     thread.daemon = True
@@ -80,11 +91,10 @@ def reset_request():
         # Check if email exists
         users = db.collection("HealthCareP").where("Email", "==", email).get()
         if not users:
-            return render_template("reset_password.html", message="No account found with this email.")
+            return render_template("reset_password.html", message="✅ If this email is registered, a reset link has been sent.")
 
         user_doc = users[0].to_dict()
         
-
         #  Create password reset token
         s = get_serializer()
         token = s.dumps({"email": email}, salt="password-reset")
@@ -127,14 +137,12 @@ def reset_request():
         # Send email 
         try:
             send_email_async(email, subject, html_body, text_body)
-            message = "✅ A reset email has been sent! Check your inbox."
+            message = "✅ If this email is registered, a reset link has been sent."
         except Exception as e:
             print("❌ Reset email error:", e)
             message = "Failed to send email. Please try again later."
 
     return render_template("reset_password.html", message=message)
-
-
 
 
 # Reset Password Form
@@ -155,10 +163,6 @@ def reset_password(token):
     if request.method == "POST":
         password = request.form.get("password", "")
         confirm = request.form.get("confirm_password", "")
-
-        # Empty fields
-        if not password or not confirm:
-            return render_template("reset_token.html", message="Please fill out both fields.")
 
         # Match check
         if password != confirm:
