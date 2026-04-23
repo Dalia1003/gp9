@@ -6,9 +6,19 @@
     <title>Patient Dashboard - Medical Coding Portal</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <script src="https://kit.fontawesome.com/a2d9d6c9c4.js" crossorigin="anonymous"></script>
+    <script src="/static/theme.js" defer></script>
 </head>
 <body>
     {% include "header.html" %}
+    <div id="banner" class="banner"></div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+            <div class="banner {{ category }} show">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
 
     <!-- Breadcrumb -->
     <nav class="ouwn-breadcrumb-bar" role="navigation" aria-label="Breadcrumb">
@@ -34,6 +44,61 @@
         window.history.replaceState({}, document.title, window.location.pathname);
     </script>
     {% endif %}
+    <script>
+        setTimeout(() => {
+            const banner = document.querySelector('.banner.show');
+            if (banner) banner.classList.remove('show');
+        }, 4000);
+    </script>
+    
+<div class="list-actions">
+<div class="list-actions">
+    <div class="header-buttons">
+        <button class="btn-primary add-patient-btn" onclick="location.href='{{ url_for('add_patient') }}'">
+            <i class="fa-solid fa-user-plus"></i>
+            <span>Add Patient</span>
+        </button>
+    </div>
+</div>
+
+    <!-- Live Search -->
+ <div class="view-toggle">
+    <button id="gridView" class="btn-primary" title="Grid View">
+        <i class="fa-solid fa-table-cells"></i>
+    </button>
+
+    <button id="listView" class="btn-primary" title="List View">
+        <i class="fa-solid fa-list"></i>
+    </button>
+</div>
+<div class="search-bar">
+    <label>Search:</label>
+
+    <input type="text" id="unifiedSearchInput" placeholder="Enter search value">
+    <div class="custom-select-wrapper search-select">
+    <select id="searchType">
+  <option value="name">Name</option>
+  <option value="id">ID</option>
+  <option value="yob">Year of Birth</option>
+  <option value="icd">ICD Code</option>
+</select>
+</div>   
+</div>
+            <!-- Sort Controls -->
+<div class="sort-bar">
+  <label>Sort by:</label>
+<div class="custom-select-wrapper">
+<select id="sortBy">
+  <option value="">Select</option>
+  <option value="name_asc">First Name (A → Z)</option>
+  <option value="name_desc">First Name (Z → A)</option>
+  <option value="age_young">Age (Younger first)</option>
+  <option value="age_old">Age (Older first)</option>
+  <option value="icd_date">ICD Date (Earliest first)</option>
+</select>
+</div>
+</div>
+</div>
 
     <!-- patient list -->
     <main class="main-content">
@@ -44,16 +109,10 @@
                 <div class="title-bar-line-fade"></div>
             </div>
 
-            <div class="header-buttons">
-                <button class="btn-primary" onclick="location.href='{{ url_for('add_patient') }}'">
-                    <i class="fa-solid fa-user-plus"></i> Add Patient
-                </button>
-            </div>
-
             {% if patients %}
             <div class="patient-grid">
                 {% for p in patients %}
-                <div class="patient-card">
+                <div class="patient-card" id="patient-{{ p.ID }}" data-name="{{ p.FullName }}" data-id="{{ p.ID }}">
                     <div class="card-corner"></div>
                     <div class="card-content">
                         <h3 class="patient-name">{{ p.FullName }}</h3>
@@ -61,10 +120,25 @@
                             <span class="id-label">Patient ID</span>
                             <span class="patient-id">{{ p.ID }}</span>
                         </div>
-                        <button class="btn-secondary" 
-                            onclick="location.href='{{ url_for('add_note') }}?pid={{ p.ID }}'">
-                            <i class="fa-solid fa-file-medical"></i> Add Medical Notes
-                        </button>
+                        <div class="patient-actions">
+                          <button class="btn-icon btn-secondary"
+                              onclick="location.href='{{ url_for('add_note') }}?pid={{ p.ID }}'"
+                              title="Add Medical Notes" aria-label="Add Medical Notes">
+                              <i class="fa-solid fa-file-medical"></i>
+                          </button>
+
+                          <button class="btn-icon btn-secondary"
+                              onclick="location.href='{{ url_for('view_patient', pid=p.ID) }}'"
+                              title="View Patient" aria-label="View Patient">
+                              <i class="fa-solid fa-eye"></i>
+                          </button>
+
+                          <button type="button" class="btn-icon btn-danger delete-btn"
+                              data-id="{{ p.ID }}"
+                              title="Delete Patient" aria-label="Delete Patient">
+                              <i class="fa-solid fa-trash"></i>
+                          </button>
+                        </div>
                     </div>
                 </div>
                 {% endfor %}
@@ -75,9 +149,459 @@
         </div>
         
     </main>
+<div id="horizontalView" style="display: none; overflow-x: auto;">
+  <table class="patient-table">
+    <thead>
+      <tr>
+        <th>Full Name</th>
+        <th>Patient ID</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in patients %}
+      <tr id="patient-row-{{ p.ID }}">
+        <td>{{ p.FullName }}</td>
+        <td>{{ p.ID }}</td>
+        <td>
+          <button class="btn-secondary" onclick="location.href='{{ url_for('add_note') }}?pid={{ p.ID }}'">
+            <i class="fa-solid fa-file-medical"></i>
+          </button>
+          <button class="btn-secondary" onclick="location.href='{{ url_for('view_patient', pid=p.ID) }}'">
+            <i class="fa-solid fa-eye"></i>
+          </button>
+          <button class="btn-danger delete-btn" data-id="{{ p.ID }}">
+            <i class="fa-solid fa-trash"></i>
+          </button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+    
+    <!-- Custom Confirm Modal -->
+<div id="confirmModal" class="confirm-modal">
+  <div class="confirm-box">
+    <h3 class="confirm-title">
+      <i class="fa-solid fa-triangle-exclamation"></i>
+      Confirm deletion
+    </h3>
+
+    <p id="confirmMessage" class="confirm-message"></p>
+
+    <div class="confirm-actions">
+      <button type="button" id="confirmCancel" class="btn-secondary">Cancel</button>
+      <button type="button" id="confirmOk" class="btn-danger">Delete</button>
+    </div>
+  </div>
+</div>
+
 
     <footer>
         <p>&copy; 2025 OuwN. All Rights Reserved.</p>
     </footer>
+    <script>
+/* ========= Banner (your existing CSS) ========= */
+function showBanner(message, type = "success") {
+  const banner = document.getElementById("banner");
+  if (!banner) return;
+
+  const icon =
+    type === "success"
+      ? '<i class="fa-solid fa-circle-check"></i>'
+      : '<i class="fa-solid fa-circle-exclamation"></i>';
+
+  banner.innerHTML = `${icon} <span>${message}</span>`;
+  banner.className = `banner show ${type}`;
+
+  setTimeout(() => {
+    banner.classList.remove("show");
+  }, 3500);
+}
+
+/* ========= Custom Confirm (stylable) ========= */
+function customConfirm(message) {
+  return new Promise((resolve) => {
+    const modal = document.getElementById("confirmModal");
+    const msg = document.getElementById("confirmMessage");
+    const okBtn = document.getElementById("confirmOk");
+    const cancelBtn = document.getElementById("confirmCancel");
+
+    msg.textContent = message;
+    modal.classList.add("show");
+
+    const cleanup = () => {
+      modal.classList.remove("show");
+      okBtn.onclick = null;
+      cancelBtn.onclick = null;
+      modal.onclick = null;
+      document.onkeydown = null;
+    };
+
+    okBtn.onclick = () => { cleanup(); resolve(true); };
+    cancelBtn.onclick = () => { cleanup(); resolve(false); };
+
+    // click outside closes (cancel)
+    modal.onclick = (e) => {
+      if (e.target === modal) { cleanup(); resolve(false); }
+    };
+
+    // ESC closes (cancel)
+    document.onkeydown = (e) => {
+      if (e.key === "Escape") { cleanup(); resolve(false); }
+    };
+  });
+}
+
+/* ========= Delete Patient ========= */
+document.addEventListener("click", async (e) => {
+  const btn = e.target.closest(".delete-btn");
+  if (!btn) return;
+
+  const pid = (btn.dataset.id || "").trim();
+  if (!pid) {
+    showBanner("Missing patient ID.", "error");
+    return;
+  }
+
+  const ok = await customConfirm("Delete this patient and all medical notes?");
+  if (!ok) return;
+
+  btn.disabled = true;
+
+  try {
+    const res = await fetch(`/delete_patient/${encodeURIComponent(pid)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" }
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      showBanner(data.error || data.message || "Delete failed.", "error");
+      btn.disabled = false;
+      return;
+    }
+
+    const card = document.getElementById(`patient-${pid}`);
+    if (card) card.remove();
+
+    showBanner("Patient deleted successfully.", "success");
+
+  } catch (err) {
+    showBanner("Network error. Please try again.", "error");
+    btn.disabled = false;
+  }
+});
+// Live Search + Sort (AJAX) 
+const unifiedSearchInput = document.getElementById("unifiedSearchInput");
+const searchType = document.getElementById("searchType");
+const sortBy = document.getElementById("sortBy");           // <-- IMPORTANT
+const patientGrid = document.querySelector(".patient-grid");
+
+let searchTimeout = null;
+let activeAbortController = null;
+let lastRequestSeq = 0;
+
+const initialGridHTML = patientGrid ? patientGrid.innerHTML : "";
+
+function renderPatients(patients) {
+    if (!patientGrid) return;
+
+    patientGrid.innerHTML = "";
+
+    if (!patients || !patients.length) {
+        patientGrid.innerHTML = `<div class="no-results"><i class="fa-solid fa-magnifying-glass"></i>No matching patients found</div>`;
+        return;
+    }
+
+    patients.forEach(p => {
+        const card = document.createElement("div");
+        card.className = "patient-card";
+        card.id = `patient-${p.ID}`;
+        card.dataset.name = p.FullName;
+        card.dataset.id = p.ID;
+
+        card.innerHTML = `
+          <div class="card-corner"></div>
+          <div class="card-content">
+            <h3 class="patient-name">${p.FullName}</h3>
+            <div class="patient-id-row">
+              <span class="id-label">Patient ID</span>
+              <span class="patient-id">${p.ID}</span>
+            </div>
+
+            <div class="patient-actions">
+              <button class="btn-icon btn-secondary"
+                onclick="location.href='/MedicalNotes?pid=${p.ID}'"
+                title="Add Medical Notes" aria-label="Add Medical Notes">
+                <i class="fa-solid fa-file-medical"></i>
+              </button>
+
+              <button class="btn-icon btn-secondary"
+                onclick="location.href='/view_patient/${p.ID}'"
+                title="View Patient" aria-label="View Patient">
+                <i class="fa-solid fa-eye"></i>
+              </button>
+
+              <button type="button" class="btn-icon btn-danger delete-btn"
+                data-id="${p.ID}"
+                title="Delete Patient" aria-label="Delete Patient">
+                <i class="fa-solid fa-trash"></i>
+              </button>
+            </div>
+          </div>
+        `;
+
+        patientGrid.appendChild(card);
+    });
+}
+
+function renderPatientsTable(patients) {
+    const tableBody = document.querySelector("#horizontalView tbody");
+    if (!tableBody) return;
+
+    tableBody.innerHTML = "";
+
+    if (!patients || !patients.length) {
+        tableBody.innerHTML = `
+        <tr>
+          <td colspan="3" style="text-align:center;">No matching patients found</td>
+        </tr>
+        `;
+        return;
+    }
+
+    patients.forEach(p => {
+        const tr = document.createElement("tr");
+        tr.id = `patient-row-${p.ID}`;
+        tr.innerHTML = `
+            <td>${p.FullName}</td>
+            <td>${p.ID}</td>
+            <td>
+                <button class="btn-secondary" onclick="location.href='/add_note?pid=${p.ID}'">
+                    <i class="fa-solid fa-file-medical"></i>
+                </button>
+                <button class="btn-secondary" onclick="location.href='/view_patient/${p.ID}'">
+                    <i class="fa-solid fa-eye"></i>
+                </button>
+                <button class="btn-danger delete-btn" data-id="${p.ID}">
+                    <i class="fa-solid fa-trash"></i>
+                </button>
+            </td>
+        `;
+        tableBody.appendChild(tr);
+    });
+}
+
+function validateUnifiedInput() {
+  let value = unifiedSearchInput.value;
+  if (!value) return;
+
+  const type = searchType.value;
+
+  if (type === "name") {
+    value = value.replace(/[^a-zA-Z]/g, "");
+  } else if (type === "id") {
+    value = value.replace(/[^0-9]/g, "");
+  } else if (type === "yob") {
+  value = value.replace(/[^0-9]/g, "");
+  if (value.length > 4) value = value.slice(0, 4);
+  } else if (type === "icd") {
+    value = value.replace(/[^a-zA-Z0-9.]/g, "");
+    value = value.replace(/^\./, "");           
+    value = value.replace(/(\..*)\./g, "$1");
+    value = value.toUpperCase();
+  }
+
+  unifiedSearchInput.value = value;
+}
+
+async function fetchPatients() {
+    clearTimeout(searchTimeout);
+
+    searchTimeout = setTimeout(async () => {
+        const value = unifiedSearchInput.value.trim();
+        const type = searchType.value;
+        const sort = sortBy ? sortBy.value || "" : "";
+
+        // Abort previous request
+        if (activeAbortController) activeAbortController.abort();
+        activeAbortController = new AbortController();
+        const thisSeq = ++lastRequestSeq;
+
+        try {
+            let search = "";
+let yob = "";
+let icd = "";
+
+if (type === "name" || type === "id") search = value;
+if (type === "yob") yob = value;
+if (type === "icd") icd = value;
+
+const params = new URLSearchParams({ search, yob, icd, sort });
+            const res = await fetch(`/api/patients?${params.toString()}`, {
+                signal: activeAbortController.signal
+            });
+            if (!res.ok) return;
+            const data = await res.json();
+
+            if (thisSeq !== lastRequestSeq) return;
+
+            renderPatients(data);       // card view
+            renderPatientsTable(data);  // table view
+        } catch (err) {
+            if (err && err.name === "AbortError") return;
+            console.error(err);
+        }
+    }, 150);
+}
+
+unifiedSearchInput.addEventListener("input", () => {
+  validateUnifiedInput();
+  fetchPatients();
+});
+
+searchType.addEventListener("change", () => {
+  unifiedSearchInput.value = "";
+  if (activeAbortController) activeAbortController.abort();
+  if (patientGrid) patientGrid.innerHTML = initialGridHTML;
+});
+
+if (sortBy) {
+  sortBy.addEventListener("change", fetchPatients);
+}     
+const gridBtn = document.getElementById("gridView");
+const listBtn = document.getElementById("listView");
+
+const cardView = document.querySelector(".patient-grid");
+const horizontalView = document.getElementById("horizontalView");
+
+// Load previous preference
+if (localStorage.getItem("patientView") === "horizontal") {
+    cardView.style.display = "none";
+    horizontalView.style.display = "block";
+} else {
+    cardView.style.display = "grid";
+    horizontalView.style.display = "none";
+}
+
+// Grid view button
+gridBtn.addEventListener("click", () => {
+    cardView.style.display = "grid";
+    horizontalView.style.display = "none";
+    localStorage.setItem("patientView", "card");
+});
+
+// List view button
+listBtn.addEventListener("click", () => {
+    cardView.style.display = "none";
+    horizontalView.style.display = "block";
+    localStorage.setItem("patientView", "horizontal");
+});
+function updateActiveButton() {
+    const view = localStorage.getItem("patientView") || "card";
+    if (view === "card") {
+        gridBtn.classList.add("active");
+        listBtn.classList.remove("active");
+    } else {
+        gridBtn.classList.remove("active");
+        listBtn.classList.add("active");
+    }
+}
+
+// Initial active state
+updateActiveButton();
+
+// Update active state on click
+gridBtn.addEventListener("click", () => {
+    cardView.style.display = "grid";
+    horizontalView.style.display = "none";
+    localStorage.setItem("patientView", "card");
+    updateActiveButton();
+});
+
+listBtn.addEventListener("click", () => {
+    cardView.style.display = "none";
+    horizontalView.style.display = "block";
+    localStorage.setItem("patientView", "horizontal");
+    updateActiveButton();
+});
+</script>
+<script>
+  document.querySelectorAll(".custom-select-wrapper").forEach(wrapper => {
+  const select = wrapper.querySelector("select");
+
+  const custom = document.createElement("div");
+  custom.className = "custom-select";
+
+  const selected = document.createElement("div");
+  selected.className = "custom-select-selected";
+  const selectedLabel = document.createElement("span");
+  selectedLabel.className = "custom-select-selected-label";
+  const selectedArrow = document.createElement("span");
+  selectedArrow.className = "custom-select-selected-arrow";
+  selectedArrow.setAttribute("aria-hidden", "true");
+  selectedArrow.innerHTML = "&#9662;";
+
+  const items = document.createElement("div");
+  items.className = "custom-select-items";
+
+  if (select.disabled) {
+    custom.classList.add("disabled");
+  }
+
+  function renderOptions() {
+    items.innerHTML = ""; // 🔥 clear old options
+
+    Array.from(select.options).forEach((option, index) => {
+      // 🚫 Skip placeholder + selected
+      if (option.value === "" || option.disabled || index === select.selectedIndex) return;
+
+      const div = document.createElement("div");
+      div.textContent = option.text;
+
+      div.addEventListener("click", () => {
+        if (select.disabled) return;
+
+        select.selectedIndex = index;
+        select.dispatchEvent(new Event("change"));
+
+        selectedLabel.textContent = option.text;
+
+        renderOptions(); // 🔥 rebuild list after change
+        custom.classList.remove("open");
+      });
+
+      items.appendChild(div);
+    });
+  }
+
+  // Initial value
+  selectedLabel.textContent = select.options[select.selectedIndex]?.text || "Select";
+
+  renderOptions();
+
+  selected.addEventListener("click", (e) => {
+    if (select.disabled) return;
+
+    e.stopPropagation();
+    const wasOpen = custom.classList.contains("open");
+    document.querySelectorAll(".custom-select").forEach(s => s.classList.remove("open"));
+    if (!wasOpen) custom.classList.add("open");
+  });
+
+  selected.appendChild(selectedLabel);
+  selected.appendChild(selectedArrow);
+  custom.appendChild(selected);
+  custom.appendChild(items);
+  wrapper.appendChild(custom);
+});
+
+document.addEventListener("click", () => {
+  document.querySelectorAll(".custom-select").forEach(s => s.classList.remove("open"));
+});
+</script>
 </body>
 </html>
