@@ -3,9 +3,107 @@
 <head>
   <meta charset="UTF-8">
   <title>Add Medical Note & ICD Codes</title>
+
   <link rel="stylesheet" href="/static/style.css">
   <script src="https://kit.fontawesome.com/a2d9d6c9c4.js" crossorigin="anonymous"></script>
 
+  <style>
+    /* ===== Predictions Card ===== */
+    .pred-card {
+      margin-top: 14px;
+      padding: 14px;
+      border-radius: 16px;
+      background: rgba(255,255,255,0.75);
+      border: 1px solid rgba(120, 80, 160, 0.20);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.06);
+      backdrop-filter: blur(10px);
+    }
+    .pred-card.hidden { display: none; }
+
+    .pred-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .pred-title {
+      font-weight: 800;
+      font-size: 16px;
+      color: #2b1b3a;
+    }
+
+    .pred-sub {
+      font-size: 12px;
+      opacity: 0.75;
+      margin-top: 2px;
+      color: #2b1b3a;
+    }
+
+    .pred-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .pred-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 12px;
+      border-radius: 14px;
+      background: rgba(255,255,255,0.70);
+      border: 1px solid rgba(0,0,0,0.06);
+    }
+
+    .pred-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .pred-code {
+      font-weight: 800;
+      letter-spacing: 0.2px;
+      color: #2b1b3a;
+    }
+
+    .pred-score {
+      font-weight: 700;
+      color: #2b1b3a;
+      opacity: 0.85;
+      white-space: nowrap;
+    }
+
+    .pred-bar {
+      height: 8px;
+      width: 140px;
+      border-radius: 999px;
+      background: rgba(0,0,0,0.08);
+      overflow: hidden;
+    }
+
+    .pred-bar > div {
+      height: 100%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, #7b4bb7, #b08df7);
+    }
+
+    .pred-item input[type="checkbox"]{
+      width: 18px;
+      height: 18px;
+      accent-color: #7b4bb7;
+      cursor: pointer;
+    }
+
+    /* Optional: make predict button consistent if you want */
+    #predictBtn{
+      margin: 10px 0 0;
+    }
+  </style>
 </head>
 
 <body class="form-page medical-note">
@@ -32,50 +130,116 @@
 
   <!-- Medical Note Form -->
   <form id="noteForm" class="card">
-  <div class="row">
-    <label for="pid">National ID / Iqama <span class="required">*</span></label>
-    <input name="pid" id="pid" type="text" value="{{ prefilled_pid }}" readonly style="background-color: lightgray;">
+    <div class="row">
+      <label for="name">Patient Name <span class="required">*</span></label>
+      <input name="name" id="name" type="text" value="{{ prefilled_name }}" readonly style="background-color: lightgray;">
+    </div>
+
+    <div class="row">
+      <label for="pid">National ID / Iqama <span class="required">*</span></label>
+      <input name="pid" id="pid" type="text" value="{{ prefilled_pid }}" readonly style="background-color: lightgray;">
+    </div>
+
+   <div class="row" style="position:relative;">
+  <label for="note_text">Note <span class="required">*</span></label>
+
+  <textarea name="note_text" id="note_text" rows="6">{{ note_text }}</textarea>
+
+  <div id="noteSuggestBox" class="note-suggest-box"></div>
+</div>
+
+    <!-- mic row -->
+    <div class="row">
+      <div style="display:flex; gap:10px; align-items:center;">
+        <button type="button" id="micBtn" class="mic-btn" aria-label="Start recording">
+          <i class="fa-solid fa-microphone"></i>
+        </button>
+        <span id="recStatus" style="font-weight:600;"></span>
+      </div>
+    </div>
+  </form>
+
+  <!-- =========================
+       AI Predictions
+       ========================= -->
+  <button type="button" id="predictBtn">✨ Predict</button>
+  
+  <div id="thresholdRow" class="pred-card hidden" style="margin-top:10px;">
+    <div class="pred-header" style="margin-bottom:0;">
+      <div>
+       <div class="pred-title" style="font-weight:600;">
+        <span id="thresholdTitle">Threshold: 0.50</span>
+
+        <i class="fa-solid fa-circle-info"
+          id="thresholdInfoIcon"
+          style="cursor:pointer; font-size:20px; opacity:0.8;">
+        </i>
+      </div>
+        <div class="pred-sub">Shows predictions above selected confidence</div>
+      </div>
+    </div>
+      <input id="thresholdInput" type="range" min="0" max="1" step="0.01" value="0.5" style="width:100%;">
   </div>
 
-  <div class="row">
-    <label for="note_text">Note <span class="required">*</span></label>
-    <textarea name="note_text" id="note_text" rows="6">{{ note_text }}</textarea>
+  <div id="thresholdTooltip" style="
+  display:none;
+  position:absolute;
+  background:#2b1b3a;
+  color:white;
+  padding:10px 12px;
+  border-radius:10px;
+  font-size:12px;
+  max-width:250px;
+  box-shadow:0 8px 20px rgba(0,0,0,0.2);
+  z-index:999;
+">
+  Threshold controls which predictions are shown. 
+  Only ICD codes with confidence higher than the selected value will appear.
   </div>
+  
 
-  <!-- mic row -->
-  <div class="row">
-    <div style="display:flex; gap:10px; align-items:center;">
-      <button type="button" id="micBtn" class="mic-btn" aria-label="Start recording">
-        <i class="fa-solid fa-microphone"></i>
-      </button>
-      <span id="recStatus" style="font-weight:600;"></span>
+  <div id="predictionsCard" class="pred-card hidden">
+    <div class="pred-header">
+    <div>
+      <div class="pred-title">AI Suggestions</div>
+      <div class="pred-sub">Check correct codes to save it</div>
+    </div>
+
+    <div class="pred-sub" style="font-weight:600;">
+      Confidence level
     </div>
   </div>
-</form>
 
+    <div id="predictionsList" class="pred-list"></div>
+  </div>
 
-  <!-- ICD Browser -->
+  <!-- =========================
+       ICD Browser
+       ========================= -->
   <div class="icd-container">
     <h2>ICD Code Browser</h2>
 
     <div id="categoryBoxes" class="category-boxes"></div>
-    <!-- Selected ICD codes appear here -->
     <div id="selectedCodesContainer"></div>
 
-    <!-- Search box -->
     <div class="search-section">
-      <div class="search-bar">
-        <input type="text" id="searchBox" placeholder="🔍 Search ICD code or keyword...">
-      </div>
-      <button type="button" class="search-btn" onclick="searchICD()">Search</button>
-    </div>
+  <div class="search-bar" style="position:relative;">
+    <input type="text" id="searchBox"
+           placeholder="🔍 Search ICD code or keyword..."
+           autocomplete="off">
+
+    <div id="autocompleteBox" class="autocomplete-box"></div>
   </div>
+
+  <button type="button" class="search-btn" onclick="searchICD()">Search</button>
+</div>
 
   <div id="results" style="margin-top: 10px;"></div>
 
   <div class="row actions">
     <button type="button" id="saveBothBtn">Save Note & ICD Codes</button>
   </div>
+
 </main>
 
 <footer>
@@ -83,22 +247,153 @@
 </footer>
 
 <script>
-  // Holds user selected ICD codes
-  let selectedCodes = {{ selected_icd_codes | default([]) | tojson | safe }};
-  let currentCategory = "";     // Currently selected ICD category
-  let currentICDResults = [];   // Results shown in the browser
-  let renderIndex = 0;          //Tracks infinite scroll progress
-  const PAGE_SIZE = 40;         // Number of codes to load at a time
 
-  // Show banner message
-  function showMessage(msg, type = "success", duration = 3000) {
-    const banner = document.getElementById("saveMessage");
-    banner.textContent = msg;
-    banner.className = `banner show ${type}`;
-    setTimeout(() => (banner.className = "banner"), duration);
+  function getCheckedPredictedCodes() {
+  return Array.from(
+    document.querySelectorAll("#predictionsList input.pred-check:checked")
+  ).map(cb => cb.value);
+}
+function buildMergedAdjustedCodes(checkedPredicted) {
+  const merged = [...selectedCodes];
+
+  checkedPredicted.forEach(code => {
+    const alreadyExists = merged.some(item => item.Code === code);
+
+    if (!alreadyExists) {
+      merged.push({
+        Code: code,
+        Description: ""
+      });
+    }
+  });
+
+  return merged;
+}
+function buildPredictionAnalysis() {
+  const checkedSet = new Set(getCheckedPredictedCodes());
+  const threshold = Number(document.getElementById("thresholdInput").value || 0.5);
+
+  return (lastPredictions || []).map((p, index) => ({
+    Code: String(p.Code || "").trim().toUpperCase(),
+    Confidence: Number(p.score || 0),
+    Selected: checkedSet.has(String(p.Code || "").trim().toUpperCase()),
+    VisibleAtSave: Number(p.score || 0) >= threshold,
+    ThresholdAtSave: threshold,
+    Rank: index + 1
+  }));
+}
+  //Threshold tooltip
+window.addEventListener("load", () => {
+  const infoIcon = document.getElementById("thresholdInfoIcon");
+  const tooltip = document.getElementById("thresholdTooltip");
+
+  if (!infoIcon || !tooltip) return;
+
+  infoIcon.addEventListener("mouseenter", () => {
+    tooltip.style.display = "block";
+
+    const rect = infoIcon.getBoundingClientRect();
+    tooltip.style.top = (rect.bottom + window.scrollY + 8) + "px";
+    tooltip.style.left = (rect.left + window.scrollX) + "px";
+  });
+
+  infoIcon.addEventListener("mouseleave", () => {
+    tooltip.style.display = "none";
+  });
+});
+
+   function showMessage(msg, type = "success", duration = 3000) {
+  const banner = document.getElementById("saveMessage");
+  banner.textContent = msg;
+  banner.className = `banner show ${type}`;
+  setTimeout(() => (banner.className = "banner"), duration);
+}
+
+let lastPredictions = [];
+
+function showPredictions(preds) {
+  lastPredictions = preds || [];
+
+  document.getElementById("predictionsCard").classList.remove("hidden");
+  document.getElementById("thresholdRow").classList.remove("hidden");
+
+  renderPredictions();
+}
+
+function renderPredictions() {
+  const list = document.getElementById("predictionsList");
+  const threshold = Number(document.getElementById("thresholdInput").value || 0.5);
+
+  document.getElementById("thresholdTitle").textContent =
+    `Threshold: ${threshold.toFixed(2)}`;
+
+  list.innerHTML = "";
+
+  const shown = lastPredictions.filter(p => (p.score || 0) >= threshold);
+
+  if (!shown.length) {
+    list.innerHTML = `<div class="pred-sub">No predictions match the threshold.</div>`;
+    return;
   }
 
-   //UPDATE SELECTED ICD UI
+  shown.forEach((p) => {
+    const pct = Math.round((p.score || 0) * 100);
+
+    const row = document.createElement("div");
+    row.className = "pred-item";
+
+    row.innerHTML = `
+      <div class="pred-left">
+        <input class="pred-check" type="checkbox" value="${p.Code}">
+        <div class="pred-code">${p.Code}</div>
+      </div>
+
+      <div style="display:flex; align-items:center; gap:10px;">
+        <div class="pred-score">${pct}%</div>
+        <div class="pred-bar"><div style="width:${pct}%;"></div></div>
+      </div>
+    `;
+
+    list.appendChild(row);
+  });
+}
+
+
+async function predictTop50() {
+  const noteRaw = document.getElementById("note_text").value.trim();
+
+  if (!noteRaw) {
+    showMessage("Please write a medical note first!", "error");
+    return;
+  }
+
+  const res = await fetch("/predict_icd", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ note_text: noteRaw, top_k: 50 })
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.status !== "success") {
+    showMessage(data.message || "Prediction failed", "error");
+    return;
+  }
+
+  showPredictions(data.predictions);
+}
+
+document.getElementById("thresholdInput")
+  .addEventListener("input", renderPredictions);
+
+  // =========================
+  // ICD Browser (your existing logic)
+  // =========================
+  let selectedCodes = {{ selected_icd_codes | default([]) | tojson | safe }};
+  let currentCategory = "";
+  let currentICDResults = [];
+  let renderIndex = 0;
+  const PAGE_SIZE = 40;
+
   function updateSelectedCodesUI() {
     const container = document.getElementById("selectedCodesContainer");
     container.innerHTML = "";
@@ -113,36 +408,26 @@
     });
   }
 
-   //Remove selected ICD code
   function removeCode(code) {
     selectedCodes = selectedCodes.filter((c) => c.Code !== code);
-
-    // Uncheck Removed selected ICD code checkbox if visible
     const cb = document.querySelector(`#results input[data-code='${code}']`);
     if (cb) cb.checked = false;
-
     updateSelectedCodesUI();
   }
+  window.removeCode = removeCode;
 
-  window.removeCode = removeCode; // so onclick in HTML string works
-
-  // Load Categories 
   function initCategories() {
     fetch("/icd_categories")
       .then((res) => res.json())
       .then((categories) => {
         const container = document.getElementById("categoryBoxes");
         container.innerHTML = "";
-
-        // Create a box for each category
         categories.forEach((cat) => {
           const box = document.createElement("div");
           box.className = "category-box";
           box.textContent = cat;
-          // When clicked highlight the box and load category
           box.onclick = () => {
-            document
-              .querySelectorAll(".category-box")
+            document.querySelectorAll(".category-box")
               .forEach((b) => b.classList.remove("active"));
             box.classList.add("active");
             currentCategory = cat;
@@ -151,45 +436,27 @@
           container.appendChild(box);
         });
       })
-      .catch(() => {
-        showMessage("Failed to load ICD categories.", "error");
-      });
+      .catch(() => showMessage("Failed to load ICD categories.", "error"));
   }
 
-  //  Load ICD by Category
   function loadByCategory(category) {
     fetch(`/icd_by_category/${encodeURIComponent(category)}`)
       .then((res) => res.json())
-      .then((data) => {
-        displayICDResults(data);
-      })
-      .catch(() => {
-        showMessage("Error loading ICD codes.", "error");
-      });
+      .then((data) => displayICDResults(data))
+      .catch(() => showMessage("Error loading ICD codes.", "error"));
   }
 
-  // Search 
   function searchICD() {
     const term = document.getElementById("searchBox").value.trim();
     if (!term) return;
 
-    fetch(
-      `/search_icd?term=${encodeURIComponent(term)}&category=${encodeURIComponent(
-        currentCategory
-      )}`
-    )
+    fetch(`/search_icd?term=${encodeURIComponent(term)}&category=${encodeURIComponent(currentCategory)}`)
       .then((res) => res.json())
-      .then((data) => {
-        displayICDResults(data);
-      })
-      .catch(() => {
-        showMessage("Error searching ICD codes.", "error");
-      });
+      .then((data) => displayICDResults(data))
+      .catch(() => showMessage("Error searching ICD codes.", "error"));
   }
+  window.searchICD = searchICD;
 
-  window.searchICD = searchICD; // used by the Search button onclick
-
-  // Infinite Scroll Rendering
   function displayICDResults(data) {
     const resultsDiv = document.getElementById("results");
     resultsDiv.innerHTML = "";
@@ -202,14 +469,11 @@
       return;
     }
 
-    // Render first batch
     renderNextChunk();
   }
 
-  //Render a batch of ICD codes
   function renderNextChunk() {
     const resultsDiv = document.getElementById("results");
-
     if (!currentICDResults.length) return;
     if (renderIndex >= currentICDResults.length) return;
 
@@ -219,38 +483,24 @@
       const div = document.createElement("div");
       div.className = "result-item";
 
-      const isChecked = selectedCodes.some((c) => c.Code === item.Code)
-        ? "checked"
-        : "";
-
+      const isChecked = selectedCodes.some((c) => c.Code === item.Code) ? "checked" : "";
       div.innerHTML = `
-        <input type="checkbox" data-code="${item.Code}"
-               data-desc="${item.Description}" ${isChecked}>
+        <input type="checkbox" data-code="${item.Code}" data-desc="${item.Description}" ${isChecked}>
         <strong style="margin-left:5px;">${item.Code}</strong> - ${item.Description}
       `;
-
       resultsDiv.appendChild(div);
     }
 
     renderIndex = end;
   }
 
- // Detect scroll near bottom → load more
   function handlePageScroll() {
-    // If nothing to render or all rendered , do nothing
-    if (!currentICDResults.length || renderIndex >= currentICDResults.length) {
-      return;
-    }
-
+    if (!currentICDResults.length || renderIndex >= currentICDResults.length) return;
     const scrollPosition = window.innerHeight + window.scrollY;
-    const threshold = document.body.offsetHeight - 200; // 200px from bottom
-
-    if (scrollPosition >= threshold) {
-      renderNextChunk();
-    }
+    const threshold = document.body.offsetHeight - 200;
+    if (scrollPosition >= threshold) renderNextChunk();
   }
 
-  // Select and Unselect Codes 
   function initResultsListener() {
     document.getElementById("results").addEventListener("change", (e) => {
       if (!e.target.matches("input[type='checkbox']")) return;
@@ -259,7 +509,6 @@
       const desc = e.target.dataset.desc;
 
       if (e.target.checked) {
-        // Add code if not already selected
         if (!selectedCodes.find((c) => c.Code === code)) {
           selectedCodes.push({ Code: code, Description: desc });
         }
@@ -271,189 +520,318 @@
     });
   }
 
-  // Save Note and ICD Codes
+  // =========================
+  // Save Note + Codes
+  // Adjusted = selectedCodes
+  // Predicted = ONLY checked AI codes
+  // =========================
   function initSaveButton() {
-    document
-      .getElementById("saveBothBtn")
-      .addEventListener("click", async () => {
-        const pid = document.getElementById("pid").value.trim();
-        const note = document.getElementById("note_text").value.trim();
+  document.getElementById("saveBothBtn").addEventListener("click", async () => {
+    const pid = document.getElementById("pid").value.trim();
+    const note = document.getElementById("note_text").value.trim();
 
-        if (!pid) return showMessage("Patient ID is missing!", "error");
-        if (!note) return showMessage("Please enter a medical note!", "error");
-        if (selectedCodes.length === 0)
-          return showMessage("Please select at least one ICD code!", "error");
+    const checkedPredicted = getCheckedPredictedCodes();
+    const adjustedCodes = [...selectedCodes];
+    const predictionAnalysis = buildPredictionAnalysis();
 
-        try {
-          const response = await fetch("/MedicalNotes", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              pid,
-              note_text: note,
-              icd_codes: selectedCodes,
-            }),
-          });
+    if (!pid) return showMessage("Patient ID is missing!", "error");
+    if (!note) return showMessage("Please enter a medical note!", "error");
 
-          const result = await response.json();
+    if (adjustedCodes.length === 0 && checkedPredicted.length === 0) {
+      return showMessage("Please select at least one ICD code!", "error");
+    }
 
-          if (result.status === "success") {
-            showMessage("✅ Saved successfully!", "success");
-            setTimeout(
-              () => (window.location.href = result.redirect),
-              1500
-            );
-          } else {
-            showMessage("❌ " + (result.message || "Error saving data"), "error");
-          }
-        } catch (err) {
-          showMessage("An error occurred while saving.", "error");
-        }
+    try {
+      const response = await fetch("/MedicalNotes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          pid: pid,
+          note_text: note,
+          icd_codes: adjustedCodes,
+          predicted_codes: checkedPredicted,
+          prediction_analysis: predictionAnalysis
+        }),
       });
+
+      const result = await response.json().catch(() => ({}));
+
+      if (result.status === "success") {
+        showMessage("✅ Saved successfully!", "success");
+        setTimeout(() => (window.location.href = result.redirect), 1500);
+      } else {
+        showMessage("❌ " + (result.message || "Error saving data"), "error");
+      }
+    } catch (err) {
+      showMessage("An error occurred while saving.", "error");
+    }
+  });
+}
+  // ===============================
+  // One-button Mic Dictation (KEEP AUDIO)
+  // ===============================
+  let mediaRecorder;
+  let audioChunks = [];
+  let recordedBlob = null;
+  let isRecording = false;
+  let activeStream = null;
+
+  function setRecStatus(msg) {
+    const el = document.getElementById("recStatus");
+    if (el) el.textContent = msg;
   }
+
+  function setMicUI(recording) {
+    const btn = document.getElementById("micBtn");
+    if (!btn) return;
+
+    if (recording) {
+      btn.classList.add("recording");
+      btn.innerHTML = `<i class="fa-solid fa-stop"></i>`;
+      btn.setAttribute("aria-label", "Stop recording");
+    } else {
+      btn.classList.remove("recording");
+      btn.innerHTML = `<i class="fa-solid fa-microphone"></i>`;
+      btn.setAttribute("aria-label", "Start recording");
+    }
+  }
+
+  async function startRecording() {
+    recordedBlob = null;
+    audioChunks = [];
+
+    try {
+      activeStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      let options = {};
+      if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) {
+        options.mimeType = "audio/webm;codecs=opus";
+      } else if (MediaRecorder.isTypeSupported("audio/webm")) {
+        options.mimeType = "audio/webm";
+      }
+
+      mediaRecorder = new MediaRecorder(activeStream, options);
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) audioChunks.push(e.data);
+      };
+
+      mediaRecorder.onstart = () => {
+        setRecStatus("Recording...");
+        isRecording = true;
+        setMicUI(true);
+      };
+
+      mediaRecorder.onstop = async () => {
+        setRecStatus("Transcribing...");
+        isRecording = false;
+        setMicUI(false);
+
+        recordedBlob = new Blob(audioChunks, {
+          type: mediaRecorder.mimeType || "audio/webm",
+        });
+
+        if (activeStream) {
+          activeStream.getTracks().forEach((t) => t.stop());
+          activeStream = null;
+        }
+
+        await transcribeRecording();
+      };
+
+      mediaRecorder.start();
+    } catch (err) {
+      setRecStatus("Mic error: " + err.message);
+      isRecording = false;
+      setMicUI(false);
+    }
+  }
+
+  function stopRecording() {
+    if (mediaRecorder && mediaRecorder.state !== "inactive") {
+      mediaRecorder.stop();
+    }
+  }
+
+  async function transcribeRecording() {
+    if (!recordedBlob) {
+      setRecStatus("No recording found.");
+      return;
+    }
+
+    const fd = new FormData();
+    fd.append("audio", recordedBlob, "note.webm");
+
+    try {
+      const res = await fetch("/transcribe", { method: "POST", body: fd });
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        setRecStatus("Error: " + (data.error || "Unknown"));
+        return;
+      }
+
+      const ta = document.getElementById("note_text");
+      const newText = (data.text || "").trim();
+      if (ta && newText) {
+        ta.value = ta.value ? (ta.value.trim() + "\n" + newText) : newText;
+      }
+
+      setRecStatus("Done (lang: " + (data.language || "unknown") + ")");
+    } catch (err) {
+      setRecStatus("Server error: " + err.message);
+    } finally {
+      recordedBlob = null;
+      audioChunks = [];
+    }
+  }
+
+  function toggleMic() {
+    if (isRecording) stopRecording();
+    else startRecording();
+  }
+
+  // =========================
+  // Init
+  // =========================
   window.addEventListener("load", () => {
     updateSelectedCodesUI();
     initCategories();
     initResultsListener();
     initSaveButton();
+    initAutocomplete();
+    initNoteWordSuggestion();
 
-    // Attach infinite scroll once
     window.addEventListener("scroll", handlePageScroll);
+
+    document.getElementById("predictBtn")?.addEventListener("click", predictTop50);
+    document.getElementById("micBtn")?.addEventListener("click", toggleMic);
+    
   });
- // ===============================
-// One-button Mic Dictation
-// Click mic -> record
-// Click stop -> stop + auto transcribe -> fill textarea
-// ===============================
-let mediaRecorder;
-let audioChunks = [];
-let recordedBlob = null;
-let isRecording = false;
-let activeStream = null;
+  // =========================
+// ICD Autocomplete (Live Search)
+// =========================
+function initAutocomplete() {
+  const input = document.getElementById("searchBox");
+  const box = document.getElementById("autocompleteBox");
 
-function setRecStatus(msg) {
-  const el = document.getElementById("recStatus");
-  if (el) el.textContent = msg;
-}
+  input.addEventListener("input", async function () {
+    const term = this.value.trim();
 
-function setMicUI(recording) {
-  const btn = document.getElementById("micBtn");
-  if (!btn) return;
-
-  if (recording) {
-    btn.classList.add("recording");
-    btn.innerHTML = `<i class="fa-solid fa-stop"></i>`;
-    btn.setAttribute("aria-label", "Stop recording");
-  } else {
-    btn.classList.remove("recording");
-    btn.innerHTML = `<i class="fa-solid fa-microphone"></i>`;
-    btn.setAttribute("aria-label", "Start recording");
-  }
-}
-
-async function startRecording() {
-  recordedBlob = null;
-  audioChunks = [];
-
-  try {
-    activeStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-
-    let options = {};
-    if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) {
-      options.mimeType = "audio/webm;codecs=opus";
-    } else if (MediaRecorder.isTypeSupported("audio/webm")) {
-      options.mimeType = "audio/webm";
-    }
-
-    mediaRecorder = new MediaRecorder(activeStream, options);
-
-    mediaRecorder.ondataavailable = (e) => {
-      if (e.data && e.data.size > 0) audioChunks.push(e.data);
-    };
-
-    mediaRecorder.onstart = () => {
-      setRecStatus("Recording...");
-      isRecording = true;
-      setMicUI(true);
-    };
-
-    mediaRecorder.onstop = async () => {
-      setRecStatus("Transcribing...");
-      isRecording = false;
-      setMicUI(false);
-
-      recordedBlob = new Blob(audioChunks, {
-        type: mediaRecorder.mimeType || "audio/webm",
-      });
-
-      // Release mic
-      if (activeStream) {
-        activeStream.getTracks().forEach((t) => t.stop());
-        activeStream = null;
-      }
-
-      // Auto transcribe after stop
-      await transcribeRecording();
-    };
-
-    mediaRecorder.start();
-
-  } catch (err) {
-    setRecStatus("Mic error: " + err.message);
-    isRecording = false;
-    setMicUI(false);
-  }
-}
-
-function stopRecording() {
-  if (mediaRecorder && mediaRecorder.state !== "inactive") {
-    mediaRecorder.stop();
-  }
-}
-
-async function transcribeRecording() {
-  if (!recordedBlob) {
-    setRecStatus("No recording found.");
-    return;
-  }
-
-  const fd = new FormData();
-  fd.append("audio", recordedBlob, "note.webm");
-
-  try {
-    const res = await fetch("/transcribe", { method: "POST", body: fd });
-    const data = await res.json().catch(() => ({}));
-
-    if (!res.ok) {
-      setRecStatus("Error: " + (data.error || "Unknown"));
+    if (term.length < 2) {
+      box.style.display = "none";
       return;
     }
 
-    // Append to existing note (better UX than overwrite)
-    const ta = document.getElementById("note_text");
-    const newText = (data.text || "").trim();
-    if (ta && newText) {
-      ta.value = ta.value ? (ta.value.trim() + "\n" + newText) : newText;
+    try {
+      const res = await fetch(
+        `/search_icd?term=${encodeURIComponent(term)}&category=${encodeURIComponent(currentCategory)}`
+      );
+
+      const data = await res.json();
+      box.innerHTML = "";
+
+      if (!data.length) {
+        box.style.display = "none";
+        return;
+      }
+
+      data.slice(0, 10).forEach(item => {
+        const div = document.createElement("div");
+        div.className = "autocomplete-item";
+        div.textContent = `${item.Code} - ${item.Description}`;
+
+        div.addEventListener("click", function () {
+          input.value = item.Code;
+          box.style.display = "none";
+          displayICDResults([item]); // optional: show full result
+        });
+
+        box.appendChild(div);
+      });
+
+      box.style.display = "block";
+
+    } catch (err) {
+      console.error("Autocomplete error:", err);
+    }
+  });
+
+  document.addEventListener("click", function (e) {
+    if (!e.target.closest(".search-bar")) {
+      box.style.display = "none";
+    }
+  });
+}
+// ==========================
+// Medical Word Suggestion (Textarea)
+// ==========================
+function initNoteWordSuggestion() {
+
+  const textarea = document.getElementById("note_text");
+  const box = document.getElementById("noteSuggestBox");
+
+  textarea.addEventListener("input", async function () {
+
+    const text = textarea.value;
+    const words = text.split(/\s+/);
+    const lastWord = words[words.length - 1];
+
+    if (lastWord.length < 3) {
+      box.style.display = "none";
+      return;
     }
 
-    setRecStatus("Done (lang: " + (data.language || "unknown") + ")");
-  } catch (err) {
-    setRecStatus("Server error: " + err.message);
-  } finally {
-    recordedBlob = null;
-    audioChunks = [];
-  }
-}
+    try {
+      const res = await fetch(`/search_icd?term=${encodeURIComponent(lastWord)}`);
+      const data = await res.json();
 
-// Toggle mic button
-function toggleMic() {
-  if (isRecording) stopRecording();
-  else startRecording();
-}
-window.addEventListener("load", () => {
-  document.getElementById("micBtn")?.addEventListener("click", toggleMic);
-});
+      if (!data.length) {
+        box.style.display = "none";
+        return;
+      }
 
+      // extract only unique descriptions (medical terms)
+    const uniqueWords = [...new Set(
+      data.flatMap(d => 
+        d.Description
+          .toLowerCase()
+          .replace(/[,()]/g,"")
+          .split(/\s+/)
+          .filter(word => word.startsWith(lastWord.toLowerCase()))
+                )
+       )];
+      box.innerHTML = "";
+
+      uniqueWords.slice(0,5).forEach(word => {
+        const div = document.createElement("div");
+        div.className = "note-suggest-item";
+        div.textContent = word;
+
+        div.addEventListener("click", function () {
+          words[words.length - 1] = word;
+          textarea.value = words.join(" ") + " ";
+          box.style.display = "none";
+          textarea.focus();
+        });
+
+        box.appendChild(div);
+      });
+
+      box.style.display = "block";
+
+    } catch (err) {
+      console.error("Note suggestion error:", err);
+    }
+
+  });
+
+  document.addEventListener("click", function(e){
+    if (!e.target.closest("#note_text")) {
+      box.style.display = "none";
+    }
+  });
+}
 </script>
 
 </body>
