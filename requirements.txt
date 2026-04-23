@@ -4,7 +4,5 @@ python-dotenv
 firebase-admin
 openai-whisper
 transformers
-torch
-torchaudio
 sentencepiece
 safetensors
