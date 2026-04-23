@@ -1,30 +1,310 @@
 from dotenv import load_dotenv
-load_dotenv() # Load environment variables from .env file
-from flask import Flask, render_template, jsonify, request, session, redirect, url_for, flash
-# Flask → Needed
-# render_template → Used for HTML pages
-# jsonify → Used for AJAX responses
-# request → Used to read form/AJAX data
-# session → Needed for login sessions
-# redirect, url_for → Needed for redirects
-# flash → Needed for error/success messages
-from firebase.Initialization import db # Needed — Firestore reference
-from datetime import datetime, date
-# datetime → Needed for note creation time
-# date → Needed for DOB validation
+load_dotenv()
+from typing import Dict, Any
+
 import os, json, re, uuid
-# os → file paths, reading .env variables  
-# json → loading icd_data.json  
-# re → regex validation  
-# uuid → unique IDs for notes + ICD records
+from datetime import datetime, date, timezone
+
+from flask import Flask, render_template, jsonify, request, session, redirect, url_for, flash
+from firebase.Initialization import db
+
+import whisper
+import hashlib
+from collections import defaultdict
+
+# ----------------------------
+# ML imports (ICD model)
+# ----------------------------
+import torch
+import torch.nn as nn
+from transformers import AutoTokenizer, AutoConfig, RobertaModel
+
+DEVICE = "cpu"  # change to "cuda" if you have GPU + proper torch build
+
+MODEL_MAX_LENGTH = 4000
+CHUNK_SIZE = 128
+PAD_TO_MULTIPLE = CHUNK_SIZE
+
+# ---- EXACT LabelAttention (same as repo) ----
+class LabelAttention(nn.Module):
+    def __init__(self, input_size: int, projection_size: int, num_classes: int):
+        super().__init__()
+        self.first_linear = nn.Linear(input_size, projection_size, bias=False)
+        self.second_linear = nn.Linear(projection_size, num_classes, bias=False)
+        self.third_linear = nn.Linear(input_size, num_classes)
+        self._init_weights(mean=0.0, std=0.03)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        weights = torch.tanh(self.first_linear(x))
+        att_weights = self.second_linear(weights)
+        att_weights = torch.nn.functional.softmax(att_weights, dim=1).transpose(1, 2)
+        weighted_output = att_weights @ x
+        return (
+            self.third_linear.weight.mul(weighted_output)
+            .sum(dim=2)
+            .add(self.third_linear.bias)
+        )
+
+    def _init_weights(self, mean: float = 0.0, std: float = 0.03) -> None:
+        torch.nn.init.normal_(self.first_linear.weight, mean, std)
+        torch.nn.init.normal_(self.second_linear.weight, mean, std)
+        torch.nn.init.normal_(self.third_linear.weight, mean, std)
 
 
+# ---- EXACT PLMICD forward (same as repo) ----
+class PLMICD(nn.Module):
+    def __init__(self, num_classes: int, model_path: str):
+        super().__init__()
+        self.config = AutoConfig.from_pretrained(
+            model_path, num_labels=num_classes, finetuning_task=None
+        )
+
+        # ✅ safer load
+        self.roberta = RobertaModel.from_pretrained(
+            model_path, config=self.config, add_pooling_layer=False
+        )
+
+        self.attention = LabelAttention(
+            input_size=self.config.hidden_size,
+            projection_size=self.config.hidden_size,
+            num_classes=num_classes,
+        )
+
+    def forward(self, input_ids=None, attention_mask=None):
+        batch_size, num_chunks, chunk_size = input_ids.size()
+
+        outputs = self.roberta(
+            input_ids.view(-1, chunk_size),
+            attention_mask=attention_mask.view(-1, chunk_size) if attention_mask is not None else None,
+            return_dict=False,
+        )
+
+        hidden_output = outputs[0].view(batch_size, num_chunks * chunk_size, -1)
+        logits = self.attention(hidden_output)
+        return logits
+
+def tokenize_note_for_plmicd(text: str, tokenizer, device: str):
+    """
+    Tokenize a note to match long-note PLMICD inference as closely as possible.
+
+    Training config target:
+    - data.max_length = 4000
+    - chunk_size = 128
+
+    We tokenize to 4000, then right-pad to a multiple of 128
+    so the tensor can be reshaped into (1, num_chunks, 128).
+    """
+    enc = tokenizer(
+        text,
+        padding="max_length",
+        truncation=True,
+        max_length=MODEL_MAX_LENGTH,
+        add_special_tokens=True,
+        return_tensors="pt",
+    )
+
+    input_ids = enc["input_ids"]
+    attention_mask = enc["attention_mask"]
+
+    seq_len = input_ids.size(1)
+
+    # pad to nearest multiple of CHUNK_SIZE so view(...) is valid
+    padded_len = ((seq_len + CHUNK_SIZE - 1) // CHUNK_SIZE) * CHUNK_SIZE
+    pad_len = padded_len - seq_len
+
+    if pad_len > 0:
+        pad_token_id = tokenizer.pad_token_id
+        if pad_token_id is None:
+            pad_token_id = 1  # RoBERTa config uses pad_token_id=1
+
+        input_ids = torch.nn.functional.pad(
+            input_ids,
+            (0, pad_len),
+            mode="constant",
+            value=pad_token_id,
+        )
+        attention_mask = torch.nn.functional.pad(
+            attention_mask,
+            (0, pad_len),
+            mode="constant",
+            value=0,
+        )
+
+    num_chunks = input_ids.size(1) // CHUNK_SIZE
+
+    input_ids = input_ids.view(1, num_chunks, CHUNK_SIZE).to(device)
+    attention_mask = attention_mask.view(1, num_chunks, CHUNK_SIZE).to(device)
+
+    return input_ids, attention_mask, num_chunks
+import re
+
+def preprocess_note_text_exact(text: str) -> str:
+    """
+    Closer deployment:
+    - lowercase
+    - normalize whitespace
+    - remove digits
+    - keep alphabetic clinical text and common punctuation
+    - preserve separators often seen in notes
+    """
+    if text is None:
+        return ""
+
+    s = str(text).lower()
+
+    # normalize line breaks/tabs first
+    s = s.replace("\r", " ").replace("\n", " ").replace("\t", " ")
+
+    # remove digits (closer to your stated training assumptions)
+    s = re.sub(r"\d+", " ", s)
+
+    # normalize common separators to spaces around them
+    s = re.sub(r"[_|]+", " ", s)
+
+    # keep letters + spaces + common punctuation used in clinical notes
+    s = re.sub(r"[^a-z\s\.,;:\-\(\)\/]+", " ", s)
+
+    # collapse repeated punctuation spacing
+    s = re.sub(r"\s*([.,;:/()\-\]])\s*", r" \1 ", s)
+
+    # collapse whitespace
+    s = re.sub(r"\s+", " ", s).strip()
+
+    return s
+
+
+def normalize_state(sd: dict) -> dict:
+    return {k.replace("module.", ""): v for k, v in sd.items()}
+
+
+# lazy-load globals
+model = None
+tokenizer = None
+BEST_THRESHOLD = None
+index2target = None
+NUM_LABELS = None
+_model_loaded = False
+
+
+def _file_sha256(path: str) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+def _extract_threshold_from_ckpt(ckpt: Dict[str, Any]) -> float:
+    """
+    Tries multiple key names for threshold.
+    If missing/unusable -> returns default 0.5 (NO crash).
+    """
+    thr_obj = ckpt.get("best_threshold", ckpt.get("threshold", ckpt.get("BEST_THRESHOLD", None)))
+
+    if thr_obj is None:
+        print("⚠️ No threshold found in checkpoint. Using default 0.5. Keys:", list(ckpt.keys()))
+        return 0.5
+
+    if isinstance(thr_obj, dict):
+        if "all" in thr_obj:
+            thr_obj = thr_obj["all"]
+        else:
+            # pick first convertible value
+            for v in thr_obj.values():
+                try:
+                    thr_obj = float(v)
+                    break
+                except Exception:
+                    continue
+
+    try:
+        return float(thr_obj)
+    except Exception:
+        print("⚠️ Threshold found but not float-castable. Using default 0.5. Value:", thr_obj)
+        return 0.5
+
+def ensure_model_loaded(app: Flask) -> None:
+    """
+    Lazy-load ICD model from:
+      app.root_path/models/best_model.pt
+      app.root_path/models/target2index.json
+      app.root_path/models/RoBERTa-base-PM-M3-Voc-hf/
+    """
+    global model, tokenizer, BEST_THRESHOLD, index2target, NUM_LABELS, _model_loaded
+
+    if _model_loaded:
+        return
+
+    models_dir = os.path.join(app.root_path, "models")
+    MODEL_PATH = os.path.join(models_dir, "RoBERTa-base-PM-M3-Voc-hf")
+    CKPT_PATH  = os.path.join(models_dir, "best_model.pt")
+    T2I_PATH   = os.path.join(models_dir, "target2index.json")
+
+    if not os.path.exists(models_dir):
+        raise FileNotFoundError(f"Missing models directory: {models_dir}")
+    if not os.path.exists(T2I_PATH):
+        raise FileNotFoundError(f"Missing target2index.json at: {T2I_PATH}")
+    if not os.path.exists(CKPT_PATH):
+        raise FileNotFoundError(f"Missing best_model.pt at: {CKPT_PATH}")
+    if not os.path.exists(MODEL_PATH):
+        raise FileNotFoundError(f"Missing model folder at: {MODEL_PATH}")
+
+    print("✅ Loading checkpoint from:", CKPT_PATH)
+    print("✅ best_model.pt sha256:", _file_sha256(CKPT_PATH))
+
+    with open(T2I_PATH, "r", encoding="utf-8") as f:
+        target2index = json.load(f)
+
+    index2target = {int(v): str(k) for k, v in target2index.items()}
+    NUM_LABELS = len(index2target)
+
+    ckpt = torch.load(CKPT_PATH, map_location=DEVICE)
+    print("ℹ️ CKPT keys:", list(ckpt.keys()))
+
+    BEST_THRESHOLD = _extract_threshold_from_ckpt(ckpt)
+    print("✅ Threshold used:", BEST_THRESHOLD)
+
+    if "model" in ckpt:
+        state = ckpt["model"]
+    elif "state_dict" in ckpt:
+        state = ckpt["state_dict"]
+    else:
+        raise KeyError(f"Checkpoint missing 'model'/'state_dict'. Keys: {list(ckpt.keys())}")
+
+    state = normalize_state(state)
+
+    tokenizer_local = AutoTokenizer.from_pretrained(MODEL_PATH)
+    model_obj = PLMICD(num_classes=NUM_LABELS, model_path=MODEL_PATH).to(DEVICE)
+
+    missing, unexpected = model_obj.load_state_dict(state, strict=False)
+    print("ℹ️ load_state_dict missing keys:", len(missing))
+    print("ℹ️ load_state_dict unexpected keys:", len(unexpected))
+
+    model_obj.eval()
+
+    tokenizer = tokenizer_local
+    model = model_obj
+    _model_loaded = True
+
+    print("✅ ICD model loaded successfully FROM best_model.pt")
+
+
+# ---------------------------------------------------------
+# Create Flask App
+# ---------------------------------------------------------
 # Create Flask App
 def create_app():
     app = Flask(__name__)
     # secret key for sessions
     app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "fallback-secret-key")
     app.config["PROPAGATE_EXCEPTIONS"] = True # Allow Flask to show detailed exceptions
+        # --- Whisper STT setup ---
+    app.config["WHISPER_MODEL"] = os.environ.get("WHISPER_MODEL", "base")
+    app.config["AUDIO_UPLOAD_DIR"] = os.path.join(app.root_path, "uploads_audio")
+    os.makedirs(app.config["AUDIO_UPLOAD_DIR"], exist_ok=True)
+
+    # Load whisper model once (fast for later requests)
+    app.whisper_model = whisper.load_model(app.config["WHISPER_MODEL"])
+
 
 
      # loading all blueprints (auth + reset)
@@ -48,23 +328,127 @@ def create_app():
     def home():
         return render_template("homePage.html")
 
+    def get_filtered_patients(search_query="", yob_query="", icd_query="", include_meta=False):
+        patients = []
+        docs = db.collection("Patient").stream()
+
+        for doc in docs:
+            data = doc.to_dict()
+
+            dob = data.get("DOB")
+            age = None
+            dob_date = None
+
+            if dob:
+                try:
+                    if isinstance(dob, datetime):
+                        dob_date = dob.date()
+                    else:
+                        dob_date = datetime.strptime(str(dob), "%Y-%m-%d").date()
+
+                    age = date.today().year - dob_date.year
+                    if (date.today().month, date.today().day) < (dob_date.month, dob_date.day):
+                        age -= 1
+                except:
+                    age = None
+                    dob_date = None
+
+            # -------- NAME / ID FILTER --------
+            name_match = True
+            if search_query:
+                full_name = data.get("FullName", "").lower()
+                patient_id = doc.id.lower()
+                name_parts = full_name.split()
+                name_match = any(part.startswith(search_query) for part in name_parts) or patient_id.startswith(search_query)
+
+            # -------- YEAR OF BIRTH FILTER (DOB year prefix) --------
+            yob_match = True
+            if yob_query:
+                q = str(yob_query).strip()
+
+                # allow only digits (extra safety)
+                if not q.isdigit():
+                    yob_match = False
+                else:
+                    if dob_date is None:
+                        yob_match = False
+                    else:
+                        year_str = str(dob_date.year)   # e.g., "1888", "1999", "2004"
+                        yob_match = year_str.startswith(q)
+
+            # -------- ICD PREFIX FILTER --------
+            icd_match = True
+            icd_date = None
+
+            if icd_query or include_meta:
+                # Only do the expensive notes scan if needed (icd search OR icd_date sorting)
+                icd_match = False if icd_query else True
+
+                notes = db.collection("Patient").document(doc.id).collection("MedicalNote").stream()
+                for n in notes:
+                    icds = n.reference.collection("ICDcode").stream()
+                    for icd_doc in icds:
+                        d = icd_doc.to_dict()
+
+                        # For filtering by ICD prefix
+                        if icd_query:
+                            all_codes = (d.get("Adjusted", []) or []) + (d.get("Predicted", []) or [])
+                            if any(str(code).upper().startswith(icd_query) for code in all_codes):
+                                    icd_match = True
+                                    
+
+                        # For sorting by earliest ICD date
+                        if include_meta:
+                            adjusted_at = d.get("AdjustedAt")
+                            if adjusted_at:
+                                if isinstance(adjusted_at, datetime):
+                                    icd_date = min(icd_date, adjusted_at) if icd_date else adjusted_at
+                                else:
+                                    try:
+                                        dt = datetime.strptime(adjusted_at, "%Y-%m-%d %H:%M:%S")
+                                        icd_date = min(icd_date, dt) if icd_date else dt
+                                    except:
+                                        pass
+
+                        if icd_query and icd_match and not include_meta:
+                            break
+                    if icd_query and icd_match and not include_meta:
+                        break
+
+            if name_match and yob_match and icd_match:
+                patient_obj = {
+                    "ID": doc.id,
+                    "FullName": data.get("FullName", "Unknown"),
+                    "Age": age
+                }
+
+                if include_meta:
+                    patient_obj["DOB_Date"] = dob_date
+                    patient_obj["ICDDate"] = icd_date
+
+                patients.append(patient_obj)
+
+        return patients
 
     # DASHBOARD
     @app.route("/dashboard")
     def dashboard():
-        if 'user_id' not in session: # Block access if not logged in
+        if 'user_id' not in session:
             return redirect(url_for('Authentication.login'))
 
-        patients = [] # Store all patients to display
+        search_query = request.args.get("search", "").strip().lower()
+        yob_query = request.args.get("yob", "").strip() or request.args.get("age", "").strip()
+        icd_query = request.args.get("icd", "").strip().upper()
+
         try:
-            docs = db.collection("Patient").stream()
-            for doc in docs:
-                data = doc.to_dict()
-                patients.append({
-                    "ID": doc.id,
-                    "FullName": data.get("FullName", "Unknown")
-                })
+            patients = get_filtered_patients(
+                search_query=search_query,
+                yob_query=yob_query,
+                icd_query=icd_query,
+                include_meta=False   
+            )
         except Exception as e:
+            patients = []
             flash(f"Error fetching patients: {e}", "danger")
 
         # message after adding patient
@@ -74,8 +458,68 @@ def create_app():
             "added": "Patient added successfully!"
         }.get(msg_key, "")
 
+
         return render_template("dashboard.html", patients=patients, msg_text=msg_text)
 
+    @app.route("/api/patients")
+    def api_patients():
+        if 'user_id' not in session:
+            return jsonify([])
+
+        search_query = request.args.get("search", "").strip().lower()
+        yob_query = request.args.get("yob", "").strip() or request.args.get("age", "").strip()
+        icd_query = request.args.get("icd", "").strip().upper()
+        sort = request.args.get("sort", "").strip()
+
+        # Need meta for these sorts
+        include_meta = sort in ("age_young", "age_old", "icd_date")
+
+        patients = get_filtered_patients(
+            search_query=search_query,
+            yob_query=yob_query,
+            icd_query=icd_query,
+            include_meta=include_meta
+        )
+
+        # ---- SORTING ----
+        if sort == "name_asc":
+            patients.sort(key=lambda x: (x.get("FullName") or "").lower())
+
+        elif sort == "name_desc":
+            patients.sort(key=lambda x: (x.get("FullName") or "").lower(), reverse=True)
+
+        elif sort == "age_young":
+            patients.sort(key=lambda x: (
+                x.get("Age") is None,
+                x.get("Age") if x.get("Age") is not None else 0,
+                x.get("DOB_Date") is None,
+                -(x["DOB_Date"].toordinal() if x.get("DOB_Date") else 0)
+            ))
+
+        elif sort == "age_old":
+            patients.sort(key=lambda x: (
+                x.get("Age") is None,
+                -(x.get("Age") if x.get("Age") is not None else 0),
+                x.get("DOB_Date") is None,
+                (x["DOB_Date"].toordinal() if x.get("DOB_Date") else 0)
+            ))
+
+        elif sort == "icd_date":
+            def normalize(dt):
+                if dt is None:
+                    return datetime.max
+                if getattr(dt, "tzinfo", None) is not None:
+                    return dt.astimezone(timezone.utc).replace(tzinfo=None)
+                return dt
+
+            patients.sort(key=lambda x: normalize(x.get("ICDDate")))
+
+        # IMPORTANT: remove non-JSON-safe fields before returning
+        for p in patients:
+            p.pop("DOB_Date", None)
+            p.pop("ICDDate", None)
+
+        return jsonify(patients)
 
     # ADD PATIENT
     @app.route("/add_patient", methods=["GET", "POST"])
@@ -147,63 +591,152 @@ def create_app():
                 return redirect(url_for("dashboard", msg="added"))
 
         return render_template("add_patient.html", errors=errors)
-
-
-    # MEDICAL NOTES + ICD CODES
+     
+   # MEDICAL NOTES + ICD CODES
     @app.route("/MedicalNotes", methods=["GET", "POST"])
     def add_note():
-        if 'user_id' not in session:
-            return redirect(url_for('Authentication.login'))
+        if "user_id" not in session:
+            return redirect(url_for("Authentication.login"))
 
         if request.method == "GET":
+            pid = request.args.get("pid", "").strip()
+            patient_name = ""
+
+            if pid:
+                doc = db.collection("Patient").document(pid).get()
+                if doc.exists:
+                    patient_name = (doc.to_dict() or {}).get("FullName", "")
+
             return render_template(
                 "MedicalNotes.html",
-                prefilled_pid=request.args.get("pid", ""),
+                prefilled_pid=pid,
+                prefilled_name=patient_name,
                 note_text="",
                 selected_icd_codes=[]
             )
 
         try:
-            data = request.get_json() or request.form
-            pid = data.get("pid")
-            note_text = data.get("note_text")
-            icd_codes = data.get("icd_codes", [])
-            
+            data = request.get_json(silent=True) or request.form or {}
+
+            pid = (data.get("pid") or "").strip()
+            note_text = (data.get("note_text") or "").strip()
+            icd_codes = data.get("icd_codes", []) or []
+            predicted_codes = data.get("predicted_codes", []) or []
+            prediction_analysis = data.get("prediction_analysis", []) or []
+
+            if not pid or not note_text:
+                return jsonify({"status": "error", "message": "Missing fields"}), 400
+
+            if len(icd_codes) == 0 and len(predicted_codes) == 0:
+                return jsonify({"status": "error", "message": "Please select at least one ICD code"}), 400
+
+            # Clean adjusted codes
+            cleaned_adjusted = []
+            seen_adjusted = set()
+
+            for item in icd_codes:
+                if isinstance(item, dict):
+                    code = str(item.get("Code", "")).strip().upper()
+                else:
+                    code = str(item).strip().upper()
+
+                if code and code not in seen_adjusted:
+                    cleaned_adjusted.append({"Code": code})
+                    seen_adjusted.add(code)
+
+            # Clean predicted codes
+            cleaned_predicted = []
+            seen_predicted = set()
+
+            for code in predicted_codes:
+                c = str(code).strip().upper()
+                if c and c not in seen_predicted:
+                    cleaned_predicted.append(c)
+                    seen_predicted.add(c)
+
+            # Clean prediction analysis
+            cleaned_analysis = []
+            for item in prediction_analysis:
+                if not isinstance(item, dict):
+                    continue
+
+                code = str(item.get("Code", "")).strip().upper()
+                if not code:
+                    continue
+
+                try:
+                    confidence = float(item.get("Confidence", 0))
+                except Exception:
+                    confidence = 0.0
+
+                try:
+                    threshold_at_save = float(item.get("ThresholdAtSave", 0.5))
+                except Exception:
+                    threshold_at_save = 0.5
+
+                try:
+                    rank = int(item.get("Rank", 0))
+                except Exception:
+                    rank = 0
+
+                confidence = max(0.0, min(confidence, 1.0))
+                threshold_at_save = max(0.0, min(threshold_at_save, 1.0))
+
+                cleaned_analysis.append({
+                    "Code": code,
+                    "Confidence": confidence,
+                    "Selected": bool(item.get("Selected", False)),
+                    "VisibleAtSave": bool(item.get("VisibleAtSave", False)),
+                    "ThresholdAtSave": threshold_at_save,
+                    "Rank": rank
+                })
 
             patient_ref = db.collection("Patient").document(pid)
 
-            # Generate unique Note ID
             note_id = "note_id_" + uuid.uuid4().hex[:8]
             note_ref = patient_ref.collection("MedicalNote").document(note_id)
 
-             # saving the note
+            now = datetime.now()
+
             note_ref.set({
                 "NoteID": note_id,
                 "Note": note_text,
-                "CreatedDate": datetime.now(),
+                "CreatedDate": now,
                 "CreatedBy": session.get("user_id")
             })
 
-            # Generate unique icd ID
             icd_id = "icdcode_id_" + uuid.uuid4().hex[:8]
-            icd_doc_ref = note_ref.collection("ICDcode").document(icd_id)
+            icd_ref = note_ref.collection("ICDcode").document(icd_id)
 
-             # saving the icd code
-            icd_doc_ref.set({
+            accepted_count = sum(1 for x in cleaned_analysis if x.get("Selected"))
+            total_predictions = len(cleaned_analysis)
+
+            avg_threshold = 0.5
+            if cleaned_analysis:
+                avg_threshold = sum(
+                    float(x.get("ThresholdAtSave", 0.5)) for x in cleaned_analysis
+                ) / len(cleaned_analysis)
+
+            icd_ref.set({
                 "ICD_ID": icd_id,
-                "Adjusted": [c["Code"] for c in icd_codes],   # ARRAY of ALL selected codes
-                "Predicted": [],
+                "Adjusted": [c["Code"] for c in cleaned_adjusted],
+                "Predicted": cleaned_predicted,
+                "Analysis": cleaned_analysis,
+                "AnalysisSummary": {
+                    "TotalPredictions": total_predictions,
+                    "AcceptedPredictions": accepted_count,
+                    "AcceptanceRate": (accepted_count / total_predictions) if total_predictions else 0,
+                    "AverageThresholdAtSave": avg_threshold
+                },
                 "AdjustedBy": session.get("user_id"),
-                "AdjustedAt": datetime.now()
+                "AdjustedAt": now
             })
 
             return jsonify({"status": "success", "redirect": url_for("dashboard")})
 
         except Exception as e:
             return jsonify({"status": "error", "message": str(e)}), 500
-
-
-    # AJAX CHECK ID
+ # AJAX CHECK ID
     @app.route("/check_id")
     def check_id():
         if 'user_id' not in session:
@@ -388,6 +921,43 @@ def create_app():
 
         return render_template("profile.html", user=current_user)
 
+
+    @app.route("/change-password", methods=["GET", "POST"])
+    def change_password_request():
+        if 'user_id' not in session:
+            return redirect(url_for('Authentication.login'))
+
+        user_ref = db.collection('HealthCareP').document(session['user_id'])
+        user_doc = user_ref.get()
+        current_user = user_doc.to_dict() if user_doc.exists else {"Name": "", "UserID": "", "Email": ""}
+        email = current_user.get("Email", "").strip()
+
+        if request.method == "POST":
+            username = current_user.get("Name", "User")
+
+            if not email:
+                flash("No email is saved for this account.", "error")
+                return redirect(url_for("change_password_request"))
+
+            try:
+                from routes.auth_reset import get_serializer, build_password_action_email, send_brevo_email
+
+                s = get_serializer()
+                token = s.dumps({"email": email, "mode": "change"}, salt="password-reset")
+                change_link = url_for("auth_reset.reset_password", token=token, _external=True)
+                subject, text_body, html_body = build_password_action_email(change_link, username, mode="change")
+
+                if send_brevo_email(email, subject, html_body, text_body):
+                    flash("A change password link has been sent to your email.", "success")
+                else:
+                    flash("Failed to send the change password email. Please try again later.", "error")
+            except Exception as e:
+                flash(str(e), "error")
+
+            return redirect(url_for("change_password_request"))
+
+        return render_template("change_password_request.html", user=current_user, email=email)
+
     @app.route("/check")
     def check_unique():
         if 'user_id' not in session:
@@ -457,9 +1027,780 @@ def create_app():
         session.clear()
         return redirect(url_for("home"))
 
+    @app.route("/transcribe", methods=["POST"])
+    def transcribe_audio():
+        # Must be logged in
+        if 'user_id' not in session:
+            return jsonify({"error": "Unauthorized"}), 401
+
+        if "audio" not in request.files:
+            return jsonify({"error": "No audio file found. Key must be 'audio'."}), 400
+
+        audio_file = request.files["audio"]
+        if audio_file.filename == "":
+            return jsonify({"error": "Empty filename."}), 400
+
+        # Save temporarily
+        ext = os.path.splitext(audio_file.filename)[1].lower() or ".webm"
+        temp_name = f"{uuid.uuid4().hex}{ext}"
+        temp_path = os.path.join(app.config["AUDIO_UPLOAD_DIR"], temp_name)
+        audio_file.save(temp_path)
+
+        try:
+            # Auto-detect language (you can force language="en" or "ar" if you want)
+            result = app.whisper_model.transcribe(temp_path)
+            text = (result.get("text") or "").strip()
+            language = result.get("language", "unknown")
+            return jsonify({"text": text, "language": language})
+        except Exception as e:
+            return jsonify({"error": f"Transcription failed: {str(e)}"}), 500
+        finally:
+            try:
+                os.remove(temp_path)
+            except Exception:
+                pass
+
+    def delete_collection(coll_ref, batch_size=50):
+        docs = coll_ref.limit(batch_size).stream()
+        deleted = 0
+
+        for doc in docs:
+            doc.reference.delete()
+            deleted += 1
+
+        if deleted >= batch_size:
+            return delete_collection(coll_ref, batch_size)
+        return deleted
+
+
+    def delete_patient_everything(patient_ref):
+        """
+        Deletes:
+          Patient/{pid}
+            MedicalNote/{noteId}
+              ICDcode/{icdId}
+        then deletes the patient doc itself.
+        """
+        notes_ref = patient_ref.collection("MedicalNote")
+        notes = list(notes_ref.stream())
+
+        for note_doc in notes:
+            note_ref = notes_ref.document(note_doc.id)
+
+            # delete ICD codes under this note
+            icd_ref = note_ref.collection("ICDcode")
+            delete_collection(icd_ref, batch_size=50)
+
+            # delete the note document
+            note_ref.delete()
+
+        # delete patient document
+        patient_ref.delete()
+
+
+    @app.route("/delete_patient/<pid>", methods=["POST"])
+    def delete_patient(pid):
+        if 'user_id' not in session:
+            return jsonify({"error": "Unauthorized"}), 401
+
+        pid = (pid or "").strip()
+
+        if not re.fullmatch(r"\d{10}", pid):
+            return jsonify({"error": "Invalid patient ID."}), 400
+
+        try:
+            patient_ref = db.collection("Patient").document(pid)
+            doc = patient_ref.get()
+
+            if not doc.exists:
+                return jsonify({"error": "Patient not found."}), 404
+
+            delete_patient_everything(patient_ref)
+            return jsonify({"status": "success"})
+
+        except Exception as e:
+            return jsonify({"status": "error", "message": str(e)}), 500
+        
+    
+    # UPDATE PATIENT INFO ONLY
+    # ---------------------------
+    @app.route("/edit_patient/<pid>", methods=["GET", "POST"])
+    def edit_patient(pid):
+        if 'user_id' not in session:
+            return redirect(url_for('Authentication.login'))
+
+        pid = (pid or "").strip()
+        if not re.fullmatch(r"\d{10}", pid):
+            return redirect(url_for("dashboard"))
+
+        patient_ref = db.collection("Patient").document(pid)
+        patient_doc = patient_ref.get()
+        if not patient_doc.exists:
+            return redirect(url_for("dashboard"))
+
+        # ✅ GET => open SAME page in info mode
+        if request.method == "GET":
+            return redirect(url_for("view_patient", pid=pid, mode="info"))
+
+        # ---------- POST ----------
+        pdata = patient_doc.to_dict() or {}
+        errors = []
+
+        full_name = request.form.get("full_name", "").strip()
+        dob = request.form.get("dob", "").strip()
+        gender = request.form.get("gender", "").strip()
+        phone = request.form.get("phone", "").strip()
+        email = request.form.get("email", "").strip()
+        address = request.form.get("address", "").strip()
+        blood = request.form.get("blood_type", "").strip()
+
+        form = {
+            "full_name": full_name,
+            "dob": dob,
+            "gender": gender,
+            "phone": phone,
+            "email": email,
+            "address": address,
+            "blood_type": blood,
+        }
+
+        # ---- validations ----
+        if not all([full_name, dob, gender, phone, email, address, blood]):
+            errors.append("All fields are required.")
+
+        if phone and not re.fullmatch(r'^05\d{8}$', phone):
+            errors.append("Phone must start with 05 and be 10 digits.")
+
+        if email and not re.match(r'^[^@]+@[^@]+\.[^@]+$', email):
+            errors.append("Invalid email format.")
+
+        if dob:
+            try:
+                dob_date = datetime.strptime(dob, "%Y-%m-%d").date()
+                if dob_date > date.today():
+                    errors.append("Date of Birth cannot be in the future.")
+
+                age = date.today().year - dob_date.year
+                if (date.today().month, date.today().day) < (dob_date.month, dob_date.day):
+                    age -= 1
+
+                if age > 130:
+                    errors.append("Age cannot exceed 130 years.")
+            except ValueError:
+                errors.append("Invalid date format.")
+
+        # ---- if errors: render SAME view_patient.html (mode=info) ----
+        if errors:
+            # rebuild notes for the page
+            notes_out = []
+            notes = patient_ref.collection("MedicalNote").order_by("CreatedDate", direction="DESCENDING").stream()
+            for n in notes:
+                nd = n.to_dict() or {}
+
+                created = nd.get("CreatedDate")
+                created_str = ""
+                try:
+                    if isinstance(created, datetime):
+                        created_str = created.strftime("%Y-%m-%d %H:%M")
+                        created_iso = created.isoformat()
+                    elif created:
+                        created_str = str(created)
+                        created_iso = ""
+                except:
+                    created_str = ""
+
+                icd_id = ""
+                adjusted_codes = []
+                predicted_codes = []
+
+                try:
+                    icd_docs = list(n.reference.collection("ICDcode").limit(1).stream())
+                    if icd_docs:
+                        icd_id = icd_docs[0].id
+                        icd_data = icd_docs[0].to_dict() or {}
+                        adjusted_codes = icd_data.get("Adjusted", []) or []
+                        predicted_codes = icd_data.get("Predicted", []) or []
+                except:
+                    pass
+
+                adjusted_codes_str = ", ".join(
+                    [str(x).strip().upper() for x in adjusted_codes if str(x).strip()]
+                )
+
+                predicted_codes_str = ", ".join(
+                    [str(x).strip().upper() for x in predicted_codes if str(x).strip()]
+                )
+
+                notes_out.append({
+                    "note_id": n.id,
+                    "note_text": nd.get("Note", ""),
+                    "created_date": created_str,
+                    "created_iso": created_iso,   # ✅ ADD THIS
+                    "icd_id": icd_id,
+                    "icd_codes_str": adjusted_codes_str,
+                    "predicted_codes_str": predicted_codes_str
+                })
+
+            patient_name = (pdata.get("FullName") or "")
+            return render_template(
+                "view_patient.html",
+                pid=pid,
+                patient_name=patient_name,
+                form=form,
+                notes=notes_out,
+                errors=errors,
+                mode="info"
+            )
+
+        # ---- detect changes ----
+        def norm(s):
+            return (s or "").strip()
+
+        changed = (
+            norm(pdata.get("FullName")) != full_name or
+            norm(pdata.get("DOB")) != dob or
+            norm(pdata.get("Gender")) != gender or
+            norm(pdata.get("Phone")) != phone or
+            norm(pdata.get("Email")) != email or
+            norm(pdata.get("Address")) != address or
+            norm(pdata.get("BloodType")) != blood
+        )
+
+        if changed:
+            patient_ref.update({
+                "FullName": full_name,
+                "DOB": dob,
+                "Gender": gender,
+                "Phone": phone,
+                "Email": email,
+                "Address": address,
+                "BloodType": blood,
+            })
+            return redirect(url_for("view_patient", pid=pid, saved="1"))
+
+        # no changes
+        return redirect(url_for("view_patient", pid=pid, saved="0"))
+
+              
+    # ---------------------------
+    # MEDICAL NOTES EDIT PAGE (LIST)
+    # ---------------------------
+    @app.route("/edit_medical_notes/<pid>", methods=["GET"])
+    def edit_medical_notes(pid):
+        if 'user_id' not in session:
+            return redirect(url_for('Authentication.login'))
+        return redirect(url_for("view_patient", pid=pid))
+
+    # ---------------------------
+    # UPDATE ONE MEDICAL NOTE ONLY
+    # ---------------------------
+    @app.route("/edit_medical_notes/<pid>/<note_id>", methods=["POST"])
+    def edit_medical_note(pid, note_id):
+        if 'user_id' not in session:
+            return redirect(url_for('Authentication.login'))
+
+        pid = (pid or "").strip()
+        note_id = (note_id or "").strip()
+
+        if not re.fullmatch(r"\d{10}", pid) or not note_id:
+            return redirect(url_for("dashboard"))
+
+        patient_ref = db.collection("Patient").document(pid)
+        patient_doc = patient_ref.get()
+        if not patient_doc.exists:
+            return redirect(url_for("dashboard"))
+
+        note_text = request.form.get("note_text", "").strip()
+        icd_id = (request.form.get("icd_id") or "").strip()
+        raw_adjusted_codes = request.form.get("icd_codes", "") or ""
+        raw_predicted_codes = request.form.get("predicted_icd_codes", "") or ""
+
+        if not note_text:
+            return redirect(url_for("view_patient", pid=pid, err="note_empty"))
+        
+        # parse adjusted codes
+        parsed_adjusted = []
+        seen_adjusted = set()
+        for part in raw_adjusted_codes.split(","):
+            code = part.strip().upper()
+            if code and code not in seen_adjusted:
+                parsed_adjusted.append(code)
+                seen_adjusted.add(code)
+
+        parsed_predicted = []
+        seen_predicted = set()
+        for part in raw_predicted_codes.split(","):
+            code = part.strip().upper()
+            if code and code not in seen_predicted:
+                parsed_predicted.append(code)
+                seen_predicted.add(code)
+
+        # enforce at least one code total
+        if len(parsed_adjusted) == 0 and len(parsed_predicted) == 0:
+            return redirect(url_for("view_patient", pid=pid, err="icd_required"))
+
+        note_ref = patient_ref.collection("MedicalNote").document(note_id)
+
+        # read old values for change detection
+        old_note_text = ""
+        old_adjusted = []
+        old_predicted = []
+
+        note_doc = note_ref.get()
+        if note_doc.exists:
+            old_note_text = (note_doc.to_dict() or {}).get("Note", "") or ""
+
+        icd_ref = None
+
+        if icd_id:
+            candidate_ref = note_ref.collection("ICDcode").document(icd_id)
+            candidate_doc = candidate_ref.get()
+            if candidate_doc.exists:
+                icd_ref = candidate_ref
+                icd_data = candidate_doc.to_dict() or {}
+                old_adjusted = icd_data.get("Adjusted", []) or []
+                old_predicted = icd_data.get("Predicted", []) or []
+
+        if icd_ref is None:
+            existing_icd_docs = list(note_ref.collection("ICDcode").limit(1).stream())
+            if existing_icd_docs:
+                icd_ref = existing_icd_docs[0].reference
+                icd_id = existing_icd_docs[0].id
+                icd_data = existing_icd_docs[0].to_dict() or {}
+                old_adjusted = icd_data.get("Adjusted", []) or []
+                old_predicted = icd_data.get("Predicted", []) or []
+
+        old_norm_text = (old_note_text or "").strip()
+        new_norm_text = (note_text or "").strip()
+
+        old_norm_adjusted = sorted([str(x).strip().upper() for x in old_adjusted if str(x).strip()])
+        new_norm_adjusted = sorted([str(x).strip().upper() for x in parsed_adjusted if str(x).strip()])
+
+        old_norm_predicted = sorted([str(x).strip().upper() for x in old_predicted if str(x).strip()])
+        new_norm_predicted = sorted([str(x).strip().upper() for x in parsed_predicted if str(x).strip()])
+
+        changed = (
+            old_norm_text != new_norm_text or
+            old_norm_adjusted != new_norm_adjusted or
+            old_norm_predicted != new_norm_predicted
+        )
+
+        # update note text
+        note_ref.update({"Note": note_text})
+
+        # create ICD doc if missing
+        if icd_ref is None:
+            new_icd_id = "icdcode_id_" + uuid.uuid4().hex[:8]
+            icd_ref = note_ref.collection("ICDcode").document(new_icd_id)
+            icd_ref.set({
+                "ICD_ID": new_icd_id,
+                "Adjusted": parsed_adjusted,
+                "Predicted": parsed_predicted,
+                "AdjustedBy": session.get("user_id"),
+                "AdjustedAt": datetime.now()
+            })
+        else:
+            icd_ref.update({
+                "Adjusted": parsed_adjusted,
+                "Predicted": parsed_predicted,
+                "AdjustedBy": session.get("user_id"),
+                "AdjustedAt": datetime.now()
+            })
+
+        return redirect(url_for("view_patient", pid=pid, saved="1" if changed else "0"))
+         #Analysis summary for dashboard
+    @app.route("/icd_analysis")
+    def icd_analysis():
+        if "user_id" not in session:
+            return redirect(url_for("Authentication.login"))
+        return render_template("icd_analysis.html")
+
+
+    @app.route("/api/icd_analysis_summary")
+    def icd_analysis_summary():
+        if "user_id" not in session:
+            return jsonify({"error": "Unauthorized"}), 401
+
+        def confidence_bucket_label(confidence_percent):
+            if confidence_percent <= 20:
+                return "0-20%"
+            elif confidence_percent <= 40:
+                return "21-40%"
+            elif confidence_percent <= 60:
+                return "41-60%"
+            elif confidence_percent <= 80:
+                return "61-80%"
+            return "81-100%"
+
+        bucket_order = ["0-20%", "21-40%", "41-60%", "61-80%", "81-100%"]
+        bucket_stats = {
+            label: {
+                "label": label,
+                "total": 0,
+                "accepted": 0,
+                "avg_confidence_sum": 0.0
+            }
+            for label in bucket_order
+        }
+
+        per_code = defaultdict(lambda: {
+            "code": "",
+            "total": 0,
+            "accepted": 0,
+            "confidence_sum": 0.0,
+            "visible_count": 0
+        })
+
+        total_predictions = 0
+        total_accepted = 0
+        confidence_sum = 0.0
+        threshold_sum = 0.0
+        threshold_count = 0
+        visible_predictions = 0
+        visible_accepted = 0
+        docs_with_analysis = 0
+        total_icd_docs = 0
+
+        # Adjusted = manually added from search/browser
+        # Predicted = accepted AI codes
+        total_adjusted_codes = 0
+        total_predicted_saved_codes = 0
+        total_saved_icd_codes = 0
+        total_added_adjusted_codes = 0
+
+        patients = db.collection("Patient").stream()
+
+        for patient in patients:
+            notes = patient.reference.collection("MedicalNote").stream()
+
+            for note in notes:
+                icd_docs = note.reference.collection("ICDcode").stream()
+
+                for icd_doc in icd_docs:
+                    total_icd_docs += 1
+                    icd_data = icd_doc.to_dict() or {}
+
+                    analysis_rows = icd_data.get("Analysis", []) or []
+
+                    adjusted_codes = {
+                        str(x).strip().upper()
+                        for x in (icd_data.get("Adjusted", []) or [])
+                        if str(x).strip()
+                    }
+
+                    predicted_codes = {
+                        str(x).strip().upper()
+                        for x in (icd_data.get("Predicted", []) or [])
+                        if str(x).strip()
+                    }
+
+                    # Since Adjusted now means only manual/search-added codes
+                    adjusted_only_codes = adjusted_codes
+
+                    total_adjusted_codes += len(adjusted_codes)
+                    total_predicted_saved_codes += len(predicted_codes)
+                    total_added_adjusted_codes += len(adjusted_only_codes)
+                    total_saved_icd_codes += len(adjusted_codes) + len(predicted_codes)
+
+                    if isinstance(analysis_rows, list) and len(analysis_rows) > 0:
+                        docs_with_analysis += 1
+
+                    for row in analysis_rows:
+                        code = str(row.get("Code", "")).strip().upper()
+                        if not code:
+                            continue
+
+                        try:
+                            confidence = float(row.get("Confidence", 0))
+                        except Exception:
+                            confidence = 0.0
+
+                        confidence = max(0.0, min(confidence, 1.0))
+                        confidence_pct = confidence * 100
+                        selected = bool(row.get("Selected", False))
+                        visible = bool(row.get("VisibleAtSave", False))
+
+                        try:
+                            threshold_value = float(row.get("ThresholdAtSave", 0.5))
+                        except Exception:
+                            threshold_value = 0.5
+
+                        total_predictions += 1
+                        confidence_sum += confidence_pct
+                        total_accepted += 1 if selected else 0
+                        threshold_sum += threshold_value
+                        threshold_count += 1
+
+                        if visible:
+                            visible_predictions += 1
+                            if selected:
+                                visible_accepted += 1
+
+                        bucket = confidence_bucket_label(confidence_pct)
+                        bucket_stats[bucket]["total"] += 1
+                        bucket_stats[bucket]["accepted"] += 1 if selected else 0
+                        bucket_stats[bucket]["avg_confidence_sum"] += confidence_pct
+
+                        per_code[code]["code"] = code
+                        per_code[code]["total"] += 1
+                        per_code[code]["accepted"] += 1 if selected else 0
+                        per_code[code]["confidence_sum"] += confidence_pct
+                        per_code[code]["visible_count"] += 1 if visible else 0
+
+        bucket_results = []
+        for label in bucket_order:
+            item = bucket_stats[label]
+            total = item["total"]
+            accepted = item["accepted"]
+            avg_conf = (item["avg_confidence_sum"] / total) if total else 0
+
+            bucket_results.append({
+                "label": label,
+                "total": total,
+                "accepted": accepted,
+                "acceptance_rate": round((accepted / total) * 100, 2) if total else 0,
+                "avg_confidence": round(avg_conf, 2)
+            })
+
+        code_results = []
+        for code, item in per_code.items():
+            total = item["total"]
+            accepted = item["accepted"]
+            avg_conf = (item["confidence_sum"] / total) if total else 0
+
+            code_results.append({
+                "code": code,
+                "total": total,
+                "accepted": accepted,
+                "acceptance_rate": round((accepted / total) * 100, 2) if total else 0,
+                "avg_confidence": round(avg_conf, 2),
+                "visible_count": item["visible_count"]
+            })
+
+        code_results.sort(key=lambda x: (-x["total"], -x["acceptance_rate"], x["code"]))
+
+        # manual added codes compared to all saved codes
+        model_miss_rate = round(
+            (total_added_adjusted_codes / total_saved_icd_codes) * 100, 2
+        ) if total_saved_icd_codes else 0
+
+        return jsonify({
+            "status": "success",
+            "summary": {
+                "total_predictions": total_predictions,
+                "total_accepted": total_accepted,
+                "overall_acceptance_rate": round((total_accepted / total_predictions) * 100, 2) if total_predictions else 0,
+                "average_confidence": round((confidence_sum / total_predictions), 2) if total_predictions else 0,
+                "average_threshold": round((threshold_sum / threshold_count) * 100, 2) if threshold_count else 0,
+                "visible_predictions": visible_predictions,
+                "visible_acceptance_rate": round((visible_accepted / visible_predictions) * 100, 2) if visible_predictions else 0,
+                "docs_with_analysis": docs_with_analysis,
+                "total_icd_docs": total_icd_docs,
+                "model_miss_rate": model_miss_rate,
+                "adjusted_only_count": total_added_adjusted_codes
+            },
+            "adjusted_icd_insights": {
+                "model_miss_rate": model_miss_rate,
+                "adjusted_only_codes_count": total_added_adjusted_codes,
+                "total_saved_icd_codes": total_saved_icd_codes,
+                "predicted_saved_codes": total_predicted_saved_codes,
+                "added_adjusted_codes": total_added_adjusted_codes
+            },
+            "confidence_ranges": bucket_results,
+            "per_code": code_results
+        })
+        # ---------------------------
+    # DELETE ONE MEDICAL NOTE + ALL ICD CODES
+    # ---------------------------
+    @app.route("/delete_medical_note/<pid>/<note_id>", methods=["POST"])
+    def delete_medical_note(pid, note_id):
+        if 'user_id' not in session:
+            return jsonify({"status": "error", "message": "Unauthorized"}), 401
+
+        pid = (pid or "").strip()
+        note_id = (note_id or "").strip()
+
+        if not re.fullmatch(r"\d{10}", pid) or not note_id:
+            return jsonify({"status": "error", "message": "Invalid patient/note id"}), 400
+
+        patient_ref = db.collection("Patient").document(pid)
+        patient_doc = patient_ref.get()
+        if not patient_doc.exists:
+            return jsonify({"status": "error", "message": "Patient not found"}), 404
+
+        note_ref = patient_ref.collection("MedicalNote").document(note_id)
+        note_doc = note_ref.get()
+        if not note_doc.exists:
+            return jsonify({"status": "error", "message": "Note not found"}), 404
+
+        try:
+            # delete all ICD docs under this note
+            icd_ref = note_ref.collection("ICDcode")
+            delete_collection(icd_ref, batch_size=50)
+
+            # delete the note itself
+            note_ref.delete()
+
+            return jsonify({"status": "success"})
+        except Exception as e:
+            return jsonify({"status": "error", "message": str(e)}), 500
+
+    @app.route("/view_patient/<pid>", methods=["GET"])
+    def view_patient(pid):
+        if 'user_id' not in session:
+            return redirect(url_for('Authentication.login'))
+
+        pid = (pid or "").strip()
+        if not re.fullmatch(r"\d{10}", pid):
+            return redirect(url_for("dashboard"))
+
+        patient_ref = db.collection("Patient").document(pid)
+        patient_doc = patient_ref.get()
+
+        if not patient_doc.exists:
+            return redirect(url_for("dashboard"))
+
+        pdata = patient_doc.to_dict() or {}
+
+        form = {
+            "full_name": pdata.get("FullName", ""),
+            "dob": pdata.get("DOB", ""),
+            "gender": pdata.get("Gender", ""),
+            "phone": pdata.get("Phone", ""),
+            "email": pdata.get("Email", ""),
+            "address": pdata.get("Address", ""),
+            "blood_type": pdata.get("BloodType", ""),
+        }
+
+        notes_out = []
+        # Newest first
+        notes = patient_ref.collection("MedicalNote").order_by("CreatedDate", direction="DESCENDING").stream()
+
+        for n in notes:
+            nd = n.to_dict() or {}
+            note_id = n.id
+            note_text = nd.get("Note", "")
+
+            created = nd.get("CreatedDate")
+            created_str = ""
+            try:
+                if isinstance(created, datetime):
+                    created_str = created.strftime("%Y-%m-%d %H:%M")
+                    created_iso = created.isoformat()
+                elif created:
+                    created_str = str(created)
+                    created_iso = ""
+            except:
+                created_str = ""
+
+
+            icd_id = ""
+            adjusted_codes = []
+            predicted_codes = []
+
+            try:
+                icd_docs = list(n.reference.collection("ICDcode").limit(1).stream())
+                if icd_docs:
+                    icd_id = icd_docs[0].id
+                    icd_data = icd_docs[0].to_dict() or {}
+                    adjusted_codes = icd_data.get("Adjusted", []) or []
+                    predicted_codes = icd_data.get("Predicted", []) or []
+            except:
+                pass
+
+            adjusted_codes_str = ", ".join(
+                [str(x).strip().upper() for x in adjusted_codes if str(x).strip()]
+            )
+
+            predicted_codes_str = ", ".join(
+                [str(x).strip().upper() for x in predicted_codes if str(x).strip()]
+            )
+
+            notes_out.append({
+                "note_id": note_id,
+                "note_text": note_text,
+                "created_date": created_str,
+                "created_iso": created_iso,   # ✅ ADD THIS
+                "icd_id": icd_id,
+                "icd_codes_str": adjusted_codes_str,
+                "predicted_codes_str": predicted_codes_str
+            })
+        
+
+        mode = request.args.get("mode", "view").strip().lower()
+        if mode not in ("view", "info"):
+            mode = "view"
+
+
+        patient_name = pdata.get("FullName", "")
+
+        return render_template(
+            "view_patient.html",
+            pid=pid,
+            patient_name=patient_name,
+            form=form,
+            notes=notes_out,
+            errors=[],
+            mode=mode
+        )
+
+
+    
+
+    # ✅ Predict
+    @app.post("/predict_icd")
+    def predict_icd_route():
+        if "user_id" not in session:
+            return jsonify({"error": "Unauthorized"}), 401
+
+        ensure_model_loaded(app)
+
+        data = request.get_json(silent=True) or {}
+        raw_text = (data.get("note_text") or "").strip()
+        if not raw_text:
+            return jsonify({"status": "error", "message": "Empty note"}), 400
+
+        try:
+            k = int(data.get("top_k", 50))
+        except Exception:
+            k = 50
+        k = max(1, min(k, 50))
+
+        clean_text = preprocess_note_text_exact(raw_text)
+        if not clean_text:
+            return jsonify({"status": "error", "message": "Note became empty after preprocessing"}), 400
+
+        input_ids, attention_mask, num_chunks = tokenize_note_for_plmicd(
+            clean_text,
+            tokenizer,
+            DEVICE
+        )
+
+        with torch.no_grad():
+            logits = model(input_ids=input_ids, attention_mask=attention_mask)
+            probs = torch.sigmoid(logits)[0].detach().cpu()
+
+        vals, inds = torch.topk(probs, k=min(k, probs.numel()))
+
+        predictions = []
+        for s, i in zip(vals.tolist(), inds.tolist()):
+            predictions.append({
+                "Code": index2target.get(i, str(i)),
+                "score": float(s),
+            })
+
+        return jsonify({
+            "status": "success",
+            "predictions": predictions,
+            "default_threshold": float(BEST_THRESHOLD if BEST_THRESHOLD is not None else 0.5),
+            "top_k": k,
+            "model_max_length": MODEL_MAX_LENGTH,
+            "chunk_size": CHUNK_SIZE,
+            "num_chunks": num_chunks
+        })
     return app
 
-# Local Development
+
 if __name__ == "__main__":
     app = create_app()
-    app.run(debug=True)
+    app.run(debug=True, use_reloader=False, port=5005)
