@@ -10,6 +10,8 @@
     <!-- Icons -->
     <link rel="stylesheet"
           href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+        <script src="/static/theme.js" defer></script>
+
 </head>
 
 <body>
@@ -30,13 +32,13 @@
         </div>
     </nav>
     <!--  Flash Banners  -->
-  {% with messages = get_flashed_messages(with_categories=true) %}
-    {% if messages %}
-      {% for category, message in messages %}
-          <div class="banner {{ category }} show">{{ message }}</div>
-      {% endfor %}
-    {% endif %}
-  {% endwith %}
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="banner {{ category }} show">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %} 
 
     <!-- Main Profile Section-->
     <main class="auth-container-profile">
@@ -88,205 +90,201 @@
     </footer>
 
     <script>
-/* BANNER AUTO-HIDE*/
-setTimeout(() => {
-    const banner = document.querySelector('.banner.show');
-    if (banner) banner.classList.remove('show');
-}, 4000);
+        /* BANNER AUTO-HIDE*/
+        setTimeout(() => {
+            const banner = document.querySelector('.banner.show');
+            if (banner) banner.classList.remove('show');
+        }, 4000);
 
 
-/* PROFILE EDIT / DISCARD LOGIC */
-const editBtn = document.getElementById('editBtn');
-const form = document.getElementById('profileForm');
-const inputs = form.querySelectorAll('input:not([type=hidden])');
-const actionButtons = document.getElementById('actionButtons');
-const discardBtn = document.getElementById('discardBtn');
+        /* PROFILE EDIT / DISCARD LOGIC */
+        const editBtn = document.getElementById('editBtn');
+        const form = document.getElementById('profileForm');
+        const inputs = form.querySelectorAll('input:not([type=hidden])');
+        const actionButtons = document.getElementById('actionButtons');
+        const discardBtn = document.getElementById('discardBtn');
 
-let isEditing = false;
+        let isEditing = false;
 
-// Save original values for discard
-const originalValues = {};
-inputs.forEach(input => originalValues[input.name] = input.value);
+        // Save original values for discard
+        const originalValues = {};
+        inputs.forEach(input => originalValues[input.name] = input.value);
 
-// Enable editing
-editBtn.addEventListener('click', () => {
-    if (!isEditing) {
-        inputs.forEach(i => i.removeAttribute('readonly'));
-        form.classList.add('edit-mode');
-        actionButtons.classList.add('show');
-        editBtn.style.display = 'none';
-        isEditing = true;
-    }
-});
+        // Enable editing
+        editBtn.addEventListener('click', () => {
+            if (!isEditing) {
+                inputs.forEach(i => i.removeAttribute('readonly'));
+                form.classList.add('edit-mode');
+                actionButtons.classList.add('show');
+                editBtn.style.display = 'none';
+                isEditing = true;
+            }
+        });
 
-// Discard changes
-discardBtn.addEventListener('click', () => {
-    inputs.forEach(i => {
-        i.value = originalValues[i.name];
-        i.setAttribute('readonly', true);
-        i.classList.remove("is-valid", "is-invalid");
-    });
+        // Discard changes
+        discardBtn.addEventListener('click', () => {
+            inputs.forEach(i => {
+                i.value = originalValues[i.name];
+                i.setAttribute('readonly', true);
+                i.classList.remove("is-valid", "is-invalid");
+            });
 
-    usernameMsg.textContent = "";
-    emailMsg.textContent = "";
+            usernameMsg.textContent = "";
+            emailMsg.textContent = "";
 
-    form.classList.remove('edit-mode');
-    actionButtons.classList.remove('show');
-    editBtn.style.display = 'block';
-    isEditing = false;
-});
+            form.classList.remove('edit-mode');
+            actionButtons.classList.remove('show');
+            editBtn.style.display = 'block';
+            isEditing = false;
+        });
 
-// After Saving
-form.addEventListener('submit', () => {
-    inputs.forEach(i => i.setAttribute('readonly', true));
-    form.classList.remove('edit-mode');
-    actionButtons.classList.remove('show');
-    editBtn.style.display = 'block';
-    isEditing = false;
-});
-
-
-/* Avoids sending too many AJAX calls*/
-function debounce(fn, wait) {
-    let t;
-    return (...args) => {
-        clearTimeout(t);
-        t = setTimeout(() => fn(...args), wait);
-    };
-}
+        // After Saving
+        form.addEventListener('submit', () => {
+            inputs.forEach(i => i.setAttribute('readonly', true));
+            form.classList.remove('edit-mode');
+            actionButtons.classList.remove('show');
+            editBtn.style.display = 'block';
+            isEditing = false;
+        });
 
 
-/*  AJAX check*/
-async function checkField(field, value) {
-    if (!value) return { ok: true, exists: false, valid: false, msg: "" };
-
-    // Get original username & email from the page (your own data)
-    const originalUsername = originalValues["username"].trim().toLowerCase();
-    const originalEmail = originalValues["email"].trim().toLowerCase();
-    const valLower = value.trim().toLowerCase();
-
-    // --- Ignore your own username ---
-    if (field === "username" && valLower === originalUsername) {
-        return { ok: true, valid: true, exists: false, msg: "" };
-    }
-
-    // --- Ignore your own email ---
-    if (field === "email" && valLower === originalEmail) {
-        return { ok: true, valid: true, exists: false, msg: "" };
-    }
-
-    try {
-        const res = await fetch(`/check?field=${field}&value=${value}`);
-        const data = await res.json();
-
-        let msg = "";
-
-        if (!data.valid) {
-            msg = field === "username"
-                ? "Username must start with a CAPITAL letter and be 3–32 characters."
-                : "Please enter a valid email address.";
-        } else if (data.exists) {
-            msg = field === "username"
-                ? "Username already taken"
-                : "Email already in use";
-        }
-
-        return { ...data, msg };
-    }
-    catch (e) {
-        console.error(e);
-        return { ok: false, valid: false, exists: false, msg: "Server error" };
-    }
-}
-
-
-
-/*UI UPDATE (valid/invalid)*/
-function updateFieldUI(input, msgEl, state) {
-    const val = input.value.trim();
-
-    if (!val) {
-        input.classList.remove("is-valid", "is-invalid");
-        msgEl.textContent = "";
-        msgEl.classList.remove("err", "ok");
-        return;
-    }
-    // If any validation failed show error
-    if (!state.ok || !state.valid || state.exists) {
-        input.classList.add("is-invalid");
-        input.classList.remove("is-valid");
-        msgEl.textContent = state.msg;
-        msgEl.classList.add("err");
-        msgEl.classList.remove("ok");
-    } else {
-        input.classList.add("is-valid");
-        input.classList.remove("is-invalid");
-        msgEl.textContent = "";
-        msgEl.classList.remove("err", "ok");
-    }
-}
-
-
-/* LOCAL VALIDATION*/
-function localValidate(field, value) {
-
-    if (field === "username") {
-        // Capital letter + letters/numbers/underscore + 3–32 total length
-        const regex = /^[A-Z][A-Za-z0-9._-]{2,31}$/;
-
-        if (!regex.test(value)) {
-            return {
-                ok: true,
-                valid: false,
-                exists: false,
-                msg: "Username must start with a CAPITAL letter and be 3–32 characters."
+        /* Avoids sending too many AJAX calls*/
+        function debounce(fn, wait) {
+            let t;
+            return (...args) => {
+                clearTimeout(t);
+                t = setTimeout(() => fn(...args), wait);
             };
         }
-    }
 
-    return null;
-}
+        /*  AJAX check*/
+        async function checkField(field, value) {
+            if (!value) return { ok: true, exists: false, valid: false, msg: "" };
 
+            // Get original username & email from the page (your own data)
+            const originalUsername = originalValues["username"].trim().toLowerCase();
+            const originalEmail = originalValues["email"].trim().toLowerCase();
+            const valLower = value.trim().toLowerCase();
 
-/* ACTIVATE VALIDATION ON EDIT*/
+            // --- Ignore your own username ---
+            if (field === "username" && valLower === originalUsername) {
+                return { ok: true, valid: true, exists: false, msg: "" };
+            }
 
-// FIX: input IDs must exist in your HTML
-const usernameInput = document.querySelector("input[name='username']");
-const emailInput = document.querySelector("input[name='email']");
-const usernameMsg = document.getElementById("username-msg");
-const emailMsg = document.getElementById("email-msg");
+            // --- Ignore your own email ---
+            if (field === "email" && valLower === originalEmail) {
+                return { ok: true, valid: true, exists: false, msg: "" };
+            }
 
-editBtn.addEventListener("click", () => {
+            try {
+                const res = await fetch(`/check?field=${field}&value=${value}`);
+                const data = await res.json();
 
-    usernameInput.addEventListener("input", debounce(async () => {
-        const val = usernameInput.value.trim();
+                let msg = "";
 
-        // local validation
-        const local = localValidate("username", usernameInput.value.trim());
-        if (local) {
-            updateFieldUI(usernameInput, usernameMsg, local);
-            return;
+                if (!data.valid) {
+                    msg = field === "username"
+                        ? "Username must start with a CAPITAL letter and be 3–32 characters."
+                        : "Please enter a valid email address.";
+                } else if (data.exists) {
+                    msg = field === "username"
+                        ? "Username already taken"
+                        : "Email already in use";
+                }
+
+                return { ...data, msg };
+            }
+            catch (e) {
+                console.error(e);
+                return { ok: false, valid: false, exists: false, msg: "Server error" };
+            }
         }
 
-        //  server validation
-        const state = await checkField("username", val);
-        updateFieldUI(usernameInput, usernameMsg, state);
+        /*UI UPDATE (valid/invalid)*/
+        function updateFieldUI(input, msgEl, state) {
+            const val = input.value.trim();
 
-    }, 300));
+            if (!val) {
+                input.classList.remove("is-valid", "is-invalid");
+                msgEl.textContent = "";
+                msgEl.classList.remove("err", "ok");
+                return;
+            }
+            // If any validation failed show error
+            if (!state.ok || !state.valid || state.exists) {
+                input.classList.add("is-invalid");
+                input.classList.remove("is-valid");
+                msgEl.textContent = state.msg;
+                msgEl.classList.add("err");
+                msgEl.classList.remove("ok");
+            } else {
+                input.classList.add("is-valid");
+                input.classList.remove("is-invalid");
+                msgEl.textContent = "";
+                msgEl.classList.remove("err", "ok");
+            }
+        }
+
+        /* LOCAL VALIDATION*/
+        function localValidate(field, value) {
+
+            if (field === "username") {
+                // Capital letter + letters/numbers/underscore + 3–32 total length
+                const regex = /^[A-Z][A-Za-z0-9._-]{2,31}$/;
+
+                if (!regex.test(value)) {
+                    return {
+                        ok: true,
+                        valid: false,
+                        exists: false,
+                        msg: "Username must start with a CAPITAL letter and be 3–32 characters."
+                    };
+                }
+            }
+
+            return null;
+        }
 
 
-    emailInput.addEventListener("input", debounce(async () => {
-        const val = emailInput.value.trim();
+        /* ACTIVATE VALIDATION ON EDIT*/
 
-        // No custom local email check, go straight to server
-        const state = await checkField("email", val);
-        updateFieldUI(emailInput, emailMsg, state);
+        // FIX: input IDs must exist in your HTML
+        const usernameInput = document.querySelector("input[name='username']");
+        const emailInput = document.querySelector("input[name='email']");
+        const usernameMsg = document.getElementById("username-msg");
+        const emailMsg = document.getElementById("email-msg");
 
-    }, 300));
+        editBtn.addEventListener("click", () => {
 
-});
+            usernameInput.addEventListener("input", debounce(async () => {
+                const val = usernameInput.value.trim();
 
-</script>
+                // local validation
+                const local = localValidate("username", usernameInput.value.trim());
+                if (local) {
+                    updateFieldUI(usernameInput, usernameMsg, local);
+                    return;
+                }
+
+                //  server validation
+                const state = await checkField("username", val);
+                updateFieldUI(usernameInput, usernameMsg, state);
+
+            }, 300));
+
+
+            emailInput.addEventListener("input", debounce(async () => {
+                const val = emailInput.value.trim();
+
+                // No custom local email check, go straight to server
+                const state = await checkField("email", val);
+                updateFieldUI(emailInput, emailMsg, state);
+
+            }, 300));
+
+        });
+
+    </script>
 
 </body>
 </html>
