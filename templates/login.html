@@ -5,66 +5,72 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Login • OuwN</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script src="/static/theme.js" defer></script>
 </head>
 <body class="auth-page-body">
 
 
-<header class="header">
-    <div class="header-left">
-        <img src="{{ url_for('static', filename='logo.svg') }}" alt="OuwN Logo" class="logo-img">
-    </div>
-    <div class="header-right">
-        <nav class="header-nav">
-             <a href="{{ url_for('home') }}#about">About</a>
-        <a href="{{ url_for('home') }}#vision">Vision</a>
-        </nav>
-    </div>
-</header>
+  <header class="header">
+      <div class="header-left">
+          <img src="{{ url_for('static', filename='logo.svg') }}" alt="OuwN Logo" class="logo-img">
+      </div>
+      <div class="header-right">
+          <nav class="header-nav">
+            <a href="{{ url_for('home') }}#about">About</a>
+            <a href="{{ url_for('home') }}#vision">Vision</a>
+          </nav>
+      </div>
+  </header>
+  <!-- Display flashed messages -->
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div class="banner {{ category }} show">{{ message }}</div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
 
-{% with messages = get_flashed_messages(with_categories=true) %}
-  {% if messages %}
-    {% for category, message in messages %}
-      <div class="banner {{ category }} show">{{ message }}</div>
-    {% endfor %}
-  {% endif %}
-{% endwith %}
+  <!-- Main login container -->
+  <main class="auth-container">
+    <h2 class="auth-title">Welcome back</h2>
+    <p class="auth-subtitle">Sign in to continue caring for your patients.</p>
 
-<main class="auth-container">
-  <h2 class="auth-title">Welcome back</h2>
-  <p class="auth-subtitle">Sign in to continue caring for your patients.</p>
+    <!-- Username input -->
+    <form method="POST" action="{{ url_for('Authentication.login') }}" class="auth-form" autocomplete="off">
+      <label for="username">Username</label>
+      <input id="username" name="username" type="text" placeholder="Enter your username"
+            required value="{{ entered_username }}">
 
-  <form method="POST" action="{{ url_for('Authentication.login') }}" class="auth-form" autocomplete="off">
-    <label for="username">Username</label>
-    <input id="username" name="username" type="text" placeholder="Enter your username"
-           required value="{{ entered_username }}">
+      <!-- Password input -->
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" placeholder="Enter your password" required>
 
-    <label for="password">Password</label>
-    <input id="password" name="password" type="password" placeholder="Enter your password" required>
+        <!-- Submit button -->
+      <button type="submit" class="btn">Log in</button>
+    </form>
 
-    <button type="submit" class="btn">Log in</button>
-  </form>
+    <!-- Reset password link -->
+    <p class="auth-meta" style="margin-top:10px">
+      Forgot your password? <a class="link-sm" href="{{ url_for('auth_reset.reset_request') }}">Reset password</a>
+    </p>
+    <!-- Link to signup -->
+    <p class="auth-meta">
+      Don’t have an account? <a href="{{ url_for('Authentication.signup') }}">Sign Up</a>
+    </p>
+  </main>
 
-  <p class="auth-meta" style="margin-top:10px">
-    Forgot your password? <a class="link-sm" href="{{ url_for('auth_reset.reset_request') }}">Reset password</a>
-  </p>
-
-  <p class="auth-meta">
-    Don’t have an account? <a href="{{ url_for('Authentication.signup') }}">Sign Up</a>
-  </p>
-</main>
-
-<footer>
-  <p>&copy; 2025 OuwN. All Rights Reserved.</p>
-</footer>
-<script>
-  // Automatically hide the banner after 4 seconds
-  setTimeout(() => {
-    const banner = document.querySelector('.banner.show');
-    if (banner) {
-      banner.classList.remove('show');
-    }
-  }, 4000);
-</script>
+  <footer>
+    <p>&copy; 2025 OuwN. All Rights Reserved.</p>
+  </footer>
+  <script>
+    // Automatically hide the banner after 4 seconds
+    setTimeout(() => {
+      const banner = document.querySelector('.banner.show');
+      if (banner) {
+        banner.classList.remove('show');
+      }
+    }, 4000);
+  </script>
 
 </body>
 </html>
