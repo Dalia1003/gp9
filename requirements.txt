@@ -6,3 +6,4 @@ python-dotenv
 requests
 itsdangerous
 Werkzeug
+openai-whisper
