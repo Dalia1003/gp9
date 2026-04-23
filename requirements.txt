@@ -1,9 +1,10 @@
 Flask
-flask-mail
-firebase-admin
 gunicorn
 python-dotenv
-requests
-itsdangerous
-Werkzeug
+firebase-admin
 openai-whisper
+transformers
+torch
+torchaudio
+sentencepiece
+safetensors
