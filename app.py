@@ -8,7 +8,7 @@ from datetime import datetime, date, timezone
 from flask import Flask, render_template, jsonify, request, session, redirect, url_for, flash
 from firebase.Initialization import db
 
-import whisper
+
 import hashlib
 from collections import defaultdict
 
@@ -302,8 +302,14 @@ def create_app():
     app.config["AUDIO_UPLOAD_DIR"] = os.path.join(app.root_path, "uploads_audio")
     os.makedirs(app.config["AUDIO_UPLOAD_DIR"], exist_ok=True)
 
-    # Load whisper model once (fast for later requests)
-    app.whisper_model = whisper.load_model(app.config["WHISPER_MODEL"])
+    app.whisper_model = None
+
+    def get_whisper_model():
+        if app.whisper_model is None:
+            import whisper
+            app.whisper_model = whisper.load_model(app.config["WHISPER_MODEL"])
+        return app.whisper_model
+  
 
 
 
@@ -1048,7 +1054,8 @@ def create_app():
 
         try:
             # Auto-detect language (you can force language="en" or "ar" if you want)
-            result = app.whisper_model.transcribe(temp_path)
+            whisper_model = get_whisper_model()
+            result = whisper_model.transcribe(temp_path)
             text = (result.get("text") or "").strip()
             language = result.get("language", "unknown")
             return jsonify({"text": text, "language": language})
