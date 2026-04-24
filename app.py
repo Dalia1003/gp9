@@ -26,6 +26,7 @@ PAD_TO_MULTIPLE = CHUNK_SIZE
 # ---- EXACT LabelAttention (same as repo) ----
 
 def tokenize_note_for_plmicd(text: str, tokenizer, device: str):
+    import torch
     """
     Tokenize a note to match long-note PLMICD inference as closely as possible.
 
@@ -1760,6 +1761,7 @@ def create_app():
     # ✅ Predict
     @app.post("/predict_icd")
     def predict_icd_route():
+        import torch
         if "user_id" not in session:
             return jsonify({"error": "Unauthorized"}), 401
 
