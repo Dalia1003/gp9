@@ -223,8 +223,9 @@ def _extract_threshold_from_ckpt(ckpt: Dict[str, Any]) -> float:
         return 0.5
 
 def ensure_model_loaded(app: Flask) -> None:
-     import torch
+    import torch
     from transformers import AutoTokenizer, AutoConfig, RobertaModel
+    
     """
     Lazy-load ICD model from:
       app.root_path/models/best_model.pt
