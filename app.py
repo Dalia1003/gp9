@@ -15,9 +15,9 @@ from collections import defaultdict
 # ----------------------------
 # ML imports (ICD model)
 # ----------------------------
-import torch
+
 import torch.nn as nn
-from transformers import AutoTokenizer, AutoConfig, RobertaModel
+
 
 DEVICE = "cpu"  # change to "cuda" if you have GPU + proper torch build
 
@@ -223,6 +223,8 @@ def _extract_threshold_from_ckpt(ckpt: Dict[str, Any]) -> float:
         return 0.5
 
 def ensure_model_loaded(app: Flask) -> None:
+     import torch
+    from transformers import AutoTokenizer, AutoConfig, RobertaModel
     """
     Lazy-load ICD model from:
       app.root_path/models/best_model.pt
