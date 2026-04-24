@@ -2,7 +2,6 @@ Flask
 gunicorn
 python-dotenv
 firebase-admin
-openai-whisper
 transformers
 sentencepiece
 safetensors
