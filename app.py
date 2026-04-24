@@ -16,8 +16,6 @@ from collections import defaultdict
 # ML imports (ICD model)
 # ----------------------------
 
-import torch.nn as nn
-
 
 DEVICE = "cpu"  # change to "cuda" if you have GPU + proper torch build
 
@@ -26,62 +24,6 @@ CHUNK_SIZE = 128
 PAD_TO_MULTIPLE = CHUNK_SIZE
 
 # ---- EXACT LabelAttention (same as repo) ----
-class LabelAttention(nn.Module):
-    def __init__(self, input_size: int, projection_size: int, num_classes: int):
-        super().__init__()
-        self.first_linear = nn.Linear(input_size, projection_size, bias=False)
-        self.second_linear = nn.Linear(projection_size, num_classes, bias=False)
-        self.third_linear = nn.Linear(input_size, num_classes)
-        self._init_weights(mean=0.0, std=0.03)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        weights = torch.tanh(self.first_linear(x))
-        att_weights = self.second_linear(weights)
-        att_weights = torch.nn.functional.softmax(att_weights, dim=1).transpose(1, 2)
-        weighted_output = att_weights @ x
-        return (
-            self.third_linear.weight.mul(weighted_output)
-            .sum(dim=2)
-            .add(self.third_linear.bias)
-        )
-
-    def _init_weights(self, mean: float = 0.0, std: float = 0.03) -> None:
-        torch.nn.init.normal_(self.first_linear.weight, mean, std)
-        torch.nn.init.normal_(self.second_linear.weight, mean, std)
-        torch.nn.init.normal_(self.third_linear.weight, mean, std)
-
-
-# ---- EXACT PLMICD forward (same as repo) ----
-class PLMICD(nn.Module):
-    def __init__(self, num_classes: int, model_path: str):
-        super().__init__()
-        self.config = AutoConfig.from_pretrained(
-            model_path, num_labels=num_classes, finetuning_task=None
-        )
-
-        # ✅ safer load
-        self.roberta = RobertaModel.from_pretrained(
-            model_path, config=self.config, add_pooling_layer=False
-        )
-
-        self.attention = LabelAttention(
-            input_size=self.config.hidden_size,
-            projection_size=self.config.hidden_size,
-            num_classes=num_classes,
-        )
-
-    def forward(self, input_ids=None, attention_mask=None):
-        batch_size, num_chunks, chunk_size = input_ids.size()
-
-        outputs = self.roberta(
-            input_ids.view(-1, chunk_size),
-            attention_mask=attention_mask.view(-1, chunk_size) if attention_mask is not None else None,
-            return_dict=False,
-        )
-
-        hidden_output = outputs[0].view(batch_size, num_chunks * chunk_size, -1)
-        logits = self.attention(hidden_output)
-        return logits
 
 def tokenize_note_for_plmicd(text: str, tokenizer, device: str):
     """
@@ -224,6 +166,7 @@ def _extract_threshold_from_ckpt(ckpt: Dict[str, Any]) -> float:
 
 def ensure_model_loaded(app: Flask) -> None:
     import torch
+    import torch.nn as nn
     from transformers import AutoTokenizer, AutoConfig, RobertaModel
     
     """
@@ -236,6 +179,63 @@ def ensure_model_loaded(app: Flask) -> None:
 
     if _model_loaded:
         return
+
+    class LabelAttention(nn.Module):
+        def __init__(self, input_size: int, projection_size: int, num_classes: int):
+            super().__init__()
+            self.first_linear = nn.Linear(input_size, projection_size, bias=False)
+            self.second_linear = nn.Linear(projection_size, num_classes, bias=False)
+            self.third_linear = nn.Linear(input_size, num_classes)
+            self._init_weights(mean=0.0, std=0.03)
+    
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            weights = torch.tanh(self.first_linear(x))
+            att_weights = self.second_linear(weights)
+            att_weights = torch.nn.functional.softmax(att_weights, dim=1).transpose(1, 2)
+            weighted_output = att_weights @ x
+            return (
+                self.third_linear.weight.mul(weighted_output)
+                .sum(dim=2)
+                .add(self.third_linear.bias)
+            )
+    
+        def _init_weights(self, mean: float = 0.0, std: float = 0.03) -> None:
+            torch.nn.init.normal_(self.first_linear.weight, mean, std)
+            torch.nn.init.normal_(self.second_linear.weight, mean, std)
+            torch.nn.init.normal_(self.third_linear.weight, mean, std)
+    
+    
+    # ---- EXACT PLMICD forward (same as repo) ----
+    class PLMICD(nn.Module):
+        def __init__(self, num_classes: int, model_path: str):
+            super().__init__()
+            self.config = AutoConfig.from_pretrained(
+                model_path, num_labels=num_classes, finetuning_task=None
+            )
+    
+            # ✅ safer load
+            self.roberta = RobertaModel.from_pretrained(
+                model_path, config=self.config, add_pooling_layer=False
+            )
+    
+            self.attention = LabelAttention(
+                input_size=self.config.hidden_size,
+                projection_size=self.config.hidden_size,
+                num_classes=num_classes,
+            )
+    
+        def forward(self, input_ids=None, attention_mask=None):
+            batch_size, num_chunks, chunk_size = input_ids.size()
+    
+            outputs = self.roberta(
+                input_ids.view(-1, chunk_size),
+                attention_mask=attention_mask.view(-1, chunk_size) if attention_mask is not None else None,
+                return_dict=False,
+            )
+    
+            hidden_output = outputs[0].view(batch_size, num_chunks * chunk_size, -1)
+            logits = self.attention(hidden_output)
+            return logits
 
     models_dir = os.path.join(app.root_path, "models")
     MODEL_PATH = os.path.join(models_dir, "RoBERTa-base-PM-M3-Voc-hf")
